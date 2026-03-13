@@ -1,0 +1,250 @@
+---
+title: 'Compatibility Layer'
+description: 'Understanding Vista compatibility system and handling mod conflicts'
+icon: 'shield-check'
+---
+
+## Overview
+
+Vista's compatibility system automatically detects and manages integration with other mods to ensure smooth operation. The `CompatHandler` class serves as the central compatibility manager, detecting mod presence and applying necessary compatibility patches.
+
+## CompatHandler
+
+The `CompatHandler` is the core compatibility management system that detects loaded mods and initializes appropriate compatibility layers.
+
+### Mod Detection Flags
+
+Vista automatically detects the following mods at runtime:
+
+```java CompatHandler.java:14-19
+public static final boolean EXPOSURE = PlatHelper.isModLoaded("exposure");
+public static final boolean DISTANT_HORIZONS = PlatHelper.isModLoaded("distanthorizons");
+public static final boolean COMPUTER_CRAFT = PlatHelper.isModLoaded("computercraft");
+public static final boolean SUPPLEMENTARIES = PlatHelper.isModLoaded("supplementaries");
+public static final boolean IRIS = PlatHelper.isModLoaded("iris") || PlatHelper.isModLoaded("oculus");
+public static final boolean SODIUM = PlatHelper.isModLoaded("sodium") || PlatHelper.isModLoaded("embeddium");
+```
+
+<Note>
+Iris compatibility also covers Oculus (Forge port), and Sodium compatibility includes Embeddium (Forge port).
+</Note>
+
+### Initialization
+
+The compatibility system initializes during mod setup:
+
+```java CompatHandler.java:21-27
+public static void init() {
+    if (EXPOSURE) ExposureCompat.init();
+    if (COMPUTER_CRAFT) CCCompat.init();
+    PlatHelper.addCommonSetup(() -> {
+        if (COMPUTER_CRAFT) CCCompat.setup();
+    });
+}
+```
+
+## Iris / Oculus Compatibility
+
+Vista includes special handling for Iris and Oculus shader mods to prevent rendering conflicts with camera views.
+
+### Shader Disabling
+
+When rendering camera feeds, Vista can temporarily disable Iris shaders to prevent interference:
+
+```java IrisCompat.java:28-30
+@Nullable
+public static WorldRenderingPipeline getModifiedPipeline() {
+    return VISTA_RENDERING.get() && irisShaderPacksOff.get() ? VISTA_PIPELINE : null;
+}
+```
+
+### Render Decoration
+
+Vista wraps render tasks to manage shader state during camera rendering:
+
+```java IrisCompat.java:32-53
+public static Runnable decorateRendererWithoutShaderPacks(Runnable renderTask) {
+    return () -> {
+        LevelRenderer lr = Minecraft.getInstance().levelRenderer;
+        boolean oldShadowActive = ShadowRenderer.ACTIVE;
+        boolean oldVistaRendering = VISTA_RENDERING.get();
+        OldRenderState oldState = OldRenderState.loadFrom(CapturedRenderingState.INSTANCE);
+
+        WorldRenderingPipeline oldPipeline = getCurrentPipeline(lr);
+
+        try {
+            ShadowRenderer.ACTIVE = false;
+            VISTA_RENDERING.set(true);
+            renderTask.run();
+        } finally {
+            ShadowRenderer.ACTIVE = oldShadowActive;
+            VISTA_RENDERING.set(oldVistaRendering);
+            oldState.saveTo(CapturedRenderingState.INSTANCE);
+            setCurrentPipeline(lr, oldPipeline);
+        }
+    };
+}
+```
+
+<Warning>
+Vista disables shadow rendering (`ShadowRenderer.ACTIVE = false`) during camera passes to prevent shader conflicts.
+</Warning>
+
+### Configuration
+
+Users can control Iris compatibility behavior:
+
+```java IrisCompat.java:132-136
+public static void addConfigs(ConfigBuilder builder) {
+    irisShaderPacksOff = builder
+        .comment("Attempts to disable iris shaders in the live feed view")
+        .define("iris_off_hack", true);
+}
+```
+
+### Compatibility Hooks
+
+<CardGroup cols={2}>
+<Card title="shouldSkipShadows()" icon="moon">
+Returns `true` when Vista is rendering to skip shadow passes
+</Card>
+
+<Card title="shouldSkipBobbing()" icon="waves">
+Returns `true` to disable view bobbing during camera rendering
+</Card>
+
+<Card title="shouldShushDHCompat()" icon="volume-mute">
+Returns `true` to suppress Distant Horizons compatibility during Vista rendering
+</Card>
+</CardGroup>
+
+## Distant Horizons Compatibility
+
+Vista provides LOD (Level of Detail) rendering control for Distant Horizons integration.
+
+### LOD Quality Control
+
+```java DistantHorizonsCompat.java:14-33
+public static Runnable decorateRenderWithoutLOD(Runnable task) {
+    return () -> {
+        var config = DhApi.Delayed.configs.graphics().renderingEnabled();
+        DHMode mode = dhMode.get();
+        if (mode == DHMode.OFF) {
+            boolean valueBefore = config.getValue();
+            config.setValue(false);
+            task.run();
+            config.setValue(valueBefore);
+        } else {
+            var newDHConfig = mode.horizontal();
+            var config1 = DhApi.Delayed.configs.graphics().horizontalQuality();
+            var valueBefore = config1.getValue();
+            config1.setValue(newDHConfig);
+            task.run();
+            config1.setValue(valueBefore);
+        }
+    };
+}
+```
+
+### LOD Modes
+
+The following modes control how Distant Horizons LODs are rendered in camera views:
+
+<Accordion title="DHMode.OFF">
+Completely disables Distant Horizons rendering in camera feeds. This provides the best performance but shows less terrain.
+</Accordion>
+
+<Accordion title="DHMode.LOW">
+Renders LODs at `LOWEST` quality for minimal performance impact.
+</Accordion>
+
+<Accordion title="DHMode.MED">
+Renders LODs at `LOW` quality, balancing visual quality and performance.
+</Accordion>
+
+<Accordion title="DHMode.HIGH">
+Renders LODs at `MEDIUM` quality for better distant terrain appearance.
+</Accordion>
+
+### Configuration
+
+```java DistantHorizonsCompat.java:35-39
+public static void addConfigs(ConfigBuilder builder) {
+    dhMode = builder
+        .comment("Distant Horizons compatibility lod render quality")
+        .define("distant_horizons_LOD", DHMode.OFF);
+}
+```
+
+<Note>
+By default, Distant Horizons LODs are disabled (`DHMode.OFF`) in camera views to maximize performance.
+</Note>
+
+## Sodium / Embeddium Compatibility
+
+Vista detects and adapts to Sodium and Embeddium rendering optimizations.
+
+```java CompatHandler.java:19
+public static final boolean SODIUM = PlatHelper.isModLoaded("sodium") || PlatHelper.isModLoaded("embeddium");
+```
+
+The compatibility layer references Sodium's mixins to ensure proper interaction:
+
+```java SodiumCompat.java:3-4
+import net.caffeinemc.mods.sodium.mixin.core.render.world.LevelRendererMixin;
+import net.caffeinemc.mods.sodium.mixin.core.world.map.ClientLevelMixin;
+```
+
+<Note>
+Embeddium is automatically detected as it's the Forge port of Sodium, ensuring cross-platform compatibility.
+</Note>
+
+## Known Incompatibilities
+
+### Iris Shader Conflicts
+
+<Warning>
+When using Iris/Oculus with shader packs enabled, camera views may experience rendering artifacts. Enable the `iris_off_hack` config option to mitigate this issue.
+</Warning>
+
+**Symptoms:**
+- Black screens in camera views
+- Incorrect lighting in rendered frames
+- Shadow artifacts
+
+**Solution:**
+```toml
+[iris]
+iris_off_hack = true
+```
+
+### Distant Horizons Performance
+
+<Warning>
+Enabling Distant Horizons LODs in camera views can significantly impact performance, especially with multiple cameras.
+</Warning>
+
+**Recommendation:** Keep `distant_horizons_LOD` set to `OFF` unless you specifically need distant terrain in camera feeds.
+
+## Platform-Specific Handling
+
+Vista uses the Moonlight API's platform abstraction layer to ensure compatibility across Fabric, Forge, and NeoForge:
+
+```java CompatHandler.java:3
+import net.mehvahdjukaar.moonlight.api.platform.PlatHelper;
+```
+
+This allows Vista to detect mods consistently regardless of the mod loader platform.
+
+## Custom Integration
+
+If you're developing a mod and want to integrate with Vista's compatibility system:
+
+1. Check if your mod is loaded using `CompatHandler`'s detection flags
+2. Implement compatibility hooks following the pattern used by existing integrations
+3. Register compatibility configuration options via `addConfigs(ConfigBuilder)`
+4. Handle platform-specific implementations using `@ExpectPlatform` annotations
+
+<Card title="See Also" icon="link">
+Check [Mod Support](/api/mod-support) for specific mod integration features and APIs.
+</Card>

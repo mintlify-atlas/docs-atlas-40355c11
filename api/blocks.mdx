@@ -1,0 +1,367 @@
+---
+title: 'Blocks'
+description: 'Core block classes for TV, ViewFinder, and SignalProjector'
+---
+
+## TVBlock
+
+The television block that displays video content and can be connected in multi-block structures.
+
+**Class**: `net.mehvahdjukaar.vista.common.tv.TVBlock`
+
+**Extends**: `HorizontalDirectionalBlock`, `EntityBlock`, `Equipable`
+
+### Block Properties
+
+<ParamField path="POWER_STATE" type="EnumProperty<PowerState>">
+  Controls whether the TV is powered (OFF, DIRECT, INDIRECT). When powered, the TV emits light level 3.
+</ParamField>
+
+<ParamField path="CONNECTION" type="EnumProperty<TVType>">
+  Defines the TV's position in a multi-block grid (SINGLE, CENTER, TOP, BOTTOM, LEFT, RIGHT, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT).
+</ParamField>
+
+<ParamField path="FACING" type="DirectionProperty">
+  The horizontal direction the TV faces (NORTH, SOUTH, EAST, WEST).
+</ParamField>
+
+### Key Methods
+
+<ResponseField name="getStateForPlacement" type="BlockState">
+  Determines block state when placed, checking for neighbors to form multi-block structures.
+  
+  ```java
+  public BlockState getStateForPlacement(BlockPlaceContext context)
+  ```
+  
+  - Checks redstone power
+  - Determines facing direction from player
+  - Calculates connection type based on neighbors
+</ResponseField>
+
+<ResponseField name="getMasterBlockEntity" type="TVBlockEntity">
+  Locates the master (bottom-left) TV block entity in a multi-block structure.
+  
+  ```java
+  private TVBlockEntity getMasterBlockEntity(Level level, BlockPos pos, BlockState state)
+  ```
+  
+  Returns `null` if no master tile is found.
+</ResponseField>
+
+<ResponseField name="enlargeConnection" type="void">
+  Expands TV connections when a new TV is placed adjacent to existing ones.
+  
+  ```java
+  private void enlargeConnection(BlockState tvState, Level level, BlockPos pos)
+  ```
+  
+  - Maximum size controlled by `CommonConfigs.MAX_CONNECTED_TV_SIZE`
+  - Uses `RectFinder` to calculate optimal rectangular selection
+  - Updates all affected TV blocks
+</ResponseField>
+
+<ResponseField name="shrinkConnection" type="void">
+  Recalculates connections when a TV block is removed.
+  
+  ```java
+  private void shrinkConnection(BlockState tvState, Level level, BlockPos pos)
+  ```
+  
+  - Finds new master block
+  - Redistributes cassette to new master
+  - Updates remaining blocks
+</ResponseField>
+
+<ResponseField name="useItemOn" type="ItemInteractionResult">
+  Handles player interaction with the TV block.
+  
+  ```java
+  protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, 
+      Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult)
+  ```
+  
+  - Delegates to master TVBlockEntity
+  - Inserts/ejects cassettes
+  - Toggles pause when sneaking
+</ResponseField>
+
+### Redstone Integration
+
+<ResponseField name="hasAnalogOutputSignal" type="boolean">
+  Returns `true` - TVs provide comparator output.
+</ResponseField>
+
+<ResponseField name="getAnalogOutputSignal" type="int">
+  Returns signal strength based on inserted cassette.
+  
+  ```java
+  protected int getAnalogOutputSignal(BlockState state, Level level, BlockPos pos)
+  ```
+  
+  - Regular cassettes: 1-15 (from tape data)
+  - Hollow cassettes (linked feeds): 15
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Creating a TV Block
+// From VistaMod.java registration
+public static final Supplier<Block> TV = RegHelper.registerBlock(res("television"),
+    () -> new TVBlock(Block.Properties.of()
+        .sound(SoundType.WOOD)
+        .isRedstoneConductor((blockState, blockGetter, blockPos) -> false)
+        .mapColor(MapColor.COLOR_BROWN)
+        .strength(1.5f)));
+```
+
+```java Checking TV Connection Type
+// Get connection state
+TVType type = state.getValue(TVBlock.CONNECTION);
+
+// Check if specific edge is connected
+boolean hasTopConnection = type.isConnected(Direction2D.UP);
+boolean hasLeftEdge = type.hasEdge(Direction2D.LEFT);
+```
+
+```java Multi-block Grid System
+// TVGridAccess manages multi-block structures
+TVGridAccess gridAccess = new TVGridAccess(level, pos, state);
+Rect2D old = RectFinder.findMaxRect(gridAccess, Vec2i.ZERO, false);
+RectSelection newRec = RectFinder.findMaxExpandedRect(gridAccess, Vec2i.ZERO, maxSize, true);
+gridAccess.transform(old, newRec.selection(), newRec.touchedRect());
+gridAccess.applyChanges();
+```
+</CodeGroup>
+
+---
+
+## ViewFinderBlock
+
+A rotatable camera block that broadcasts live video feeds to TVs.
+
+**Class**: `net.mehvahdjukaar.vista.common.view_finder.ViewFinderBlock`
+
+**Extends**: `DirectionalBlock`, `EntityBlock`, `IRotatable`, `IAnalogRotatable`
+
+### Block Properties
+
+<ParamField path="FACING" type="DirectionProperty">
+  The direction the ViewFinder is mounted (UP, DOWN, NORTH, SOUTH, EAST, WEST).
+</ParamField>
+
+<ParamField path="ROTATE_TILE" type="EnumProperty<Rotation>">
+  The rotation of the ViewFinder around its mounting axis.
+</ParamField>
+
+### Key Methods
+
+<ResponseField name="getStateForPlacement" type="BlockState">
+  Sets facing based on clicked face.
+  
+  ```java
+  public BlockState getStateForPlacement(BlockPlaceContext context)
+  ```
+</ResponseField>
+
+<ResponseField name="setPlacedBy" type="void">
+  Initializes yaw and pitch based on player's looking direction.
+  
+  ```java
+  public void setPlacedBy(Level level, BlockPos pos, BlockState state, 
+      @Nullable LivingEntity placer, ItemStack stack)
+  ```
+  
+  - Calculates initial camera direction from placer's view
+  - Accounts for mounting surface orientation
+</ResponseField>
+
+<ResponseField name="useItemOn" type="ItemInteractionResult">
+  Opens camera control interface or inserts items.
+  
+  ```java
+  protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, 
+      BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult)
+  ```
+  
+  - Accept hollow cassettes to link feeds
+  - Accept glass panes for color filters
+  - Opens control GUI for camera maneuvering
+</ResponseField>
+
+<ResponseField name="rotateAnalog" type="void">
+  Rotates the ViewFinder when using analog rotation (e.g., Supplementaries wrench).
+  
+  ```java
+  public void rotateAnalog(BlockState state, Level level, BlockPos pos, 
+      Direction face, boolean ccw, float speed)
+  ```
+  
+  - `speed`: Rotation speed multiplier (scaled by 0.01)
+  - `ccw`: Counter-clockwise if true
+  - Updates yaw/pitch smoothly
+</ResponseField>
+
+### Shapes and Collision
+
+<ResponseField name="getShape" type="VoxelShape">
+  Returns empty shape when player is actively controlling the ViewFinder, otherwise full block.
+  
+  ```java
+  protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context)
+  ```
+</ResponseField>
+
+<ResponseField name="getOcclusionShape" type="VoxelShape">
+  Returns a 2-pixel thick shape on the mounting surface.
+  
+  Shapes per facing:
+  - `SHAPE_DOWN`: `Block.box(0, 0, 0, 14, 2, 14)`
+  - `SHAPE_UP`: `Block.box(0, 14, 0, 14, 14, 14)`
+  - Similar for NORTH, SOUTH, EAST, WEST
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Programmatic Rotation
+// Rotate ViewFinder to look at a specific position
+Vec3 targetPos = new Vec3(100, 64, 100);
+Vec3 cameraPos = viewFinderEntity.getBlockPos().getCenter();
+Vec3 direction = targetPos.subtract(cameraPos).normalize();
+
+viewFinderEntity.selfAccess.setGlobalFacing(direction);
+viewFinderEntity.setChanged();
+level.sendBlockUpdated(pos, state, state, 3);
+```
+
+```java Check Rotation Constraints
+// ViewFinderAccess provides rotation constraints
+ViewFinderAccess.Restraint restraints = viewFinderEntity.selfAccess.getPitchAndYawRestrains();
+float minYaw = restraints.minYaw();    // -360
+float maxYaw = restraints.maxYaw();    // 360
+float minPitch = restraints.minPitch(); // -180
+float maxPitch = restraints.maxPitch(); // 180
+```
+</CodeGroup>
+
+---
+
+## SignalProjectorBlock
+
+A block that projects custom video URLs to TVs via linked hollow cassettes.
+
+**Class**: `net.mehvahdjukaar.vista.common.projector.SignalProjectorBlock`
+
+**Extends**: `BaseEntityBlock`
+
+### Key Methods
+
+<ResponseField name="newBlockEntity" type="BlockEntity">
+  Creates a new SignalProjectorBlockEntity.
+  
+  ```java
+  public BlockEntity newBlockEntity(BlockPos pos, BlockState state)
+  ```
+</ResponseField>
+
+<ResponseField name="useItemOn" type="ItemInteractionResult">
+  Opens configuration GUI for players with permissions.
+  
+  ```java
+  protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
+      BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult)
+  ```
+  
+  Permission check:
+  - ComputerCraft enabled: All players
+  - Otherwise: Only players with `canUseGameMasterBlocks()`
+</ResponseField>
+
+<ResponseField name="onRemove" type="void">
+  Unlinks broadcast feed when block is destroyed.
+  
+  ```java
+  protected void onRemove(BlockState oldState, Level level, BlockPos pos, 
+      BlockState newState, boolean movedByPiston)
+  ```
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Creating a Signal Projector
+// From VistaMod.java registration
+public static final RegSupplier<SignalProjectorBlock> SIGNAL_PROJECTOR =
+    RegHelper.registerBlockWithItem(VistaMod.res("wave_collector"),
+        () -> new SignalProjectorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.COBBLESTONE)));
+```
+
+```java Setting Projector URL (Server-Side)
+if (level.getBlockEntity(pos) instanceof SignalProjectorBlockEntity projector) {
+    projector.setUrl("https://example.com/video.mp4");
+    projector.setChanged();
+    level.sendBlockUpdated(pos, state, state, 3);
+}
+```
+</CodeGroup>
+
+---
+
+## PowerState Enum
+
+Defines TV power states.
+
+```java source/common/src/main/java/net/mehvahdjukaar/vista/common/tv/PowerState.java
+public enum PowerState {
+    OFF,      // Not powered
+    DIRECT,   // Directly powered by redstone
+    INDIRECT  // Indirectly powered through multi-block connection
+}
+```
+
+<ResponseField name="isOn" type="boolean">
+  Returns `true` if state is DIRECT or INDIRECT.
+</ResponseField>
+
+<ResponseField name="isStrong" type="boolean">
+  Returns `true` only if state is DIRECT.
+</ResponseField>
+
+---
+
+## TVType Enum
+
+Defines connection types for multi-block TV structures.
+
+```java source/common/src/main/java/net/mehvahdjukaar/vista/common/tv/TVType.java
+public enum TVType {
+    SINGLE,        // Standalone TV
+    CENTER,        // Connected on all 4 sides
+    TOP,           // Top edge (connected down, left, right)
+    BOTTOM,        // Bottom edge (connected up, left, right)
+    LEFT,          // Left edge (connected up, down, right)
+    RIGHT,         // Right edge (connected up, down, left)
+    TOP_LEFT,      // Top-left corner
+    TOP_RIGHT,     // Top-right corner
+    BOTTOM_LEFT,   // Bottom-left corner (master tile position)
+    BOTTOM_RIGHT   // Bottom-right corner
+}
+```
+
+<ResponseField name="isConnected" type="boolean">
+  Checks if a specific side is connected.
+  
+  ```java
+  public boolean isConnected(Direction worldSide, Direction tvFacing)
+  ```
+</ResponseField>
+
+<ResponseField name="hasEdge" type="boolean">
+  Checks if a specific direction has an edge (not connected).
+  
+  ```java
+  public boolean hasEdge(Direction2D dir)
+  ```
+</ResponseField>

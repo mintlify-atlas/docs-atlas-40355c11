@@ -1,0 +1,480 @@
+---
+title: "Viewfinders"
+description: "Camera blocks for live broadcast feeds"
+---
+
+# Viewfinder Blocks
+
+Viewfinders are camera blocks that broadcast live video feeds. They can be linked to hollow cassettes and viewed on televisions, creating security camera systems, remote monitoring setups, or immersive surveillance networks.
+
+## Overview
+
+Viewfinders act as broadcast sources in Vista's system:
+
+<CardGroup cols={2}>
+  <Card title="Live Broadcasts" icon="video">
+    Stream real-time views from the viewfinder's perspective to any linked TV
+  </Card>
+  <Card title="Full Rotation" icon="rotate">
+    Manually control or automate yaw, pitch, and zoom levels
+  </Card>
+  <Card title="Remote Control" icon="gamepad">
+    Open a control GUI to aim the camera in real-time
+  </Card>
+  <Card title="Colored Lenses" icon="palette">
+    Insert glass panes or special shaders for visual effects
+  </Card>
+</CardGroup>
+
+## Block Properties
+
+From `ViewFinderBlock.java`:
+
+```java
+public class ViewFinderBlock extends DirectionalBlock 
+    implements EntityBlock, IRotatable, IAnalogRotatable {
+    
+    public static final EnumProperty<Rotation> ROTATE_TILE = 
+        EnumProperty.create("rotate_tile", Rotation.class);
+    
+    public ViewFinderBlock(Properties properties) {
+        super(properties);
+        this.registerDefaultState(this.defaultBlockState()
+                .setValue(FACING, Direction.UP)
+                .setValue(ROTATE_TILE, Rotation.NONE));
+    }
+}
+```
+
+<Note>
+Viewfinders can be placed on any face of a block (all six directions) and have an additional rotation state for fine positioning.
+</Note>
+
+## Placement and Mounting
+
+### Directional Placement
+
+Viewfinders attach to any block face:
+
+```java
+@Nullable
+public BlockState getStateForPlacement(BlockPlaceContext context) {
+    return this.defaultBlockState()
+            .setValue(FACING, context.getClickedFace());
+}
+```
+
+<Steps>
+  <Step title="Select Surface">
+    Click on any face of a block - the viewfinder will mount to that surface.
+  </Step>
+  
+  <Step title="Auto-Aim">
+    The viewfinder automatically aims toward the player who placed it.
+  </Step>
+  
+  <Step title="Fine-Tune">
+    Open the control GUI to adjust the exact viewing angle.
+  </Step>
+</Steps>
+
+### Initial Rotation
+
+When placed, the viewfinder calculates its initial aim based on the placer's position:
+
+```java
+@Override
+public void setPlacedBy(Level level, BlockPos pos, BlockState state, 
+                       @Nullable LivingEntity placer, ItemStack stack) {
+    if (placer != null && level.getBlockEntity(pos) instanceof ViewFinderBlockEntity cannon) {
+        Direction dir = Direction.orderedByNearest(placer)[0];
+        Direction myDir = state.getValue(FACING).getOpposite();
+        var access = cannon.selfAccess;
+        
+        if (dir.getAxis() == Direction.Axis.Y) {
+            float pitch = dir == Direction.UP ? -90 : 90;
+            cannon.setPitch(access, 
+                (myDir.getOpposite() == dir ? pitch + 180 : pitch));
+        } else {
+            float yaw = dir.toYRot();
+            cannon.setYaw(access, 
+                (myDir.getOpposite() == dir ? yaw + 180 : yaw));
+        }
+    }
+}
+```
+
+## Camera Control
+
+### Interactive Control GUI
+
+Right-click on a viewfinder to open the control interface:
+
+```java
+public ItemInteractionResult tryInteracting(Player player, InteractionHand hand, 
+                                           ItemStack stack, BlockPos pos) {
+    if (player.isSecondaryUseActive() || this.isEmpty()) {
+        ItemInteractionResult itemAdd = this.interactWithPlayerItem(player, hand, stack);
+        if (itemAdd.consumesAction()) {
+            return itemAdd;
+        }
+    }
+    
+    if (player instanceof ServerPlayer sp && this.canBeUsedBy(pos, player)) {
+        this.setCurrentUser(player.getUUID());
+        NetworkHelper.sendToClientPlayer(sp, 
+            new ClientBoundControlViewFinderPacket(TileOrEntityTarget.of(this)));
+    }
+    return ItemInteractionResult.SUCCESS;
+}
+```
+
+<Accordion title="Single-User Lock">
+Viewfinders implement `IOneUserInteractable`, meaning only one player can control a viewfinder at a time. This prevents conflicts when multiple players try to adjust the same camera.
+</Accordion>
+
+### Rotation Parameters
+
+Viewfinders track multiple rotation values:
+
+```java
+public class ViewFinderBlockEntity extends ItemDisplayTile 
+    implements IOneUserInteractable, IBroadcastSource {
+    
+    private float pitch = 0;      // Vertical angle
+    private float prevPitch = 0;  // For smooth interpolation
+    private float yaw = 0;        // Horizontal angle
+    private float prevYaw = 0;    // For smooth interpolation
+    private int zoom = 1;         // Zoom level (1-44)
+    private boolean locked = false; // Lock rotation
+}
+```
+
+**Getters with Interpolation:**
+
+```java
+public float getYaw(float partialTicks) {
+    return Mth.rotLerp(partialTicks, this.prevYaw, this.yaw);
+}
+
+public float getPitch(float partialTicks) {
+    return Mth.rotLerp(partialTicks, this.prevPitch, this.pitch);
+}
+```
+
+### Setting Camera Angles
+
+Angles are clamped to prevent impossible rotations:
+
+```java
+public void setPitch(ViewFinderAccess access, float relativePitch) {
+    var r = access.getPitchAndYawRestrains();
+    this.pitch = MthUtils.clampDegrees(relativePitch, r.minPitch(), r.maxPitch());
+}
+
+public void setYaw(ViewFinderAccess access, float relativeYaw) {
+    var r = access.getPitchAndYawRestrains();
+    this.yaw = MthUtils.clampDegrees(relativeYaw, r.minYaw(), r.maxYaw());
+}
+```
+
+<Note>
+The `ViewFinderAccess` system provides constraints based on the viewfinder's mounting direction, preventing the camera from rotating into impossible positions.
+</Note>
+
+## Zoom System
+
+Viewfinders support up to 44x zoom:
+
+```java
+public static final int MAX_ZOOM = 44;
+private static final float BASE_FOV = 70;
+
+public float getFOV() {
+    return BASE_FOV * getFOVModifier();
+}
+
+public float getFOVModifier() {
+    float spyglassZoom = 0.1f;
+    float maxZoom = spyglassZoom / 5;  // 0.02
+    float normalizedZoom = getNormalizedZoomFactor();
+    return Mth.lerp(normalizedZoom, 1, maxZoom);
+}
+
+public float getNormalizedZoomFactor() {
+    float normalizedZoom = (this.getZoomLevel() - 1f) / (MAX_ZOOM - 1f);
+    normalizedZoom = 1 - ((1 - normalizedZoom) * (1 - normalizedZoom)); // easing
+    return normalizedZoom;
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Zoom Level 1" icon="1">
+    Base FOV of 70 degrees - normal view
+  </Card>
+  <Card title="Zoom Level 44" icon="maximize">
+    FOV of 1.4 degrees - extreme magnification
+  </Card>
+</CardGroup>
+
+## Locking Rotation
+
+Viewfinders can be locked to prevent accidental movement:
+
+```java
+public void setAttributes(float yaw, float pitch, int zoom, boolean locked,
+                          Player controllingPlayer, ViewFinderAccess access) {
+    this.setYaw(access, yaw);
+    this.setPitch(access, pitch);
+    this.zoom = zoom;
+    this.locked = locked;
+}
+```
+
+<Warning>
+When locked, the viewfinder cannot be rotated via redstone, manual interaction, or other automation. Unlock it first to make adjustments.
+</Warning>
+
+## Analog Rotation (Redstone)
+
+Viewfinders support analog rotation via the `IAnalogRotatable` interface:
+
+```java
+@Override
+public void rotateAnalog(BlockState state, Level level, BlockPos pos, 
+                        Direction face, boolean ccw, float speed) {
+    if (level.getBlockEntity(pos) instanceof ViewFinderBlockEntity tile) {
+        speed = speed * 0.01f;
+        float deltaAngle = -speed * (ccw ? -1 : 1);
+        Vector3f rotAxis = face.step();
+        Vector3f facingVec = tile.selfAccess.getGlobalFacing(0).toVector3f();
+        
+        Quaternionf q = new Quaternionf().rotateAxis(deltaAngle, rotAxis);
+        facingVec.rotate(q);
+        Vec3 newDir = new Vec3(facingVec);
+        tile.selfAccess.setGlobalFacing(newDir, true);
+        tile.setChanged();
+    }
+}
+
+@Override
+public boolean canRotateAnalog(BlockState state, Level level, BlockPos pos, Direction face) {
+    return state.getValue(FACING).getAxis() != face.getAxis();
+}
+```
+
+<Accordion title="Supplementaries Integration">
+If you have the Supplementaries mod installed, you can use the **Crank** or **Wrench** to rotate viewfinders manually. The rotation speed is proportional to how fast you turn the crank.
+</Accordion>
+
+## Colored Lenses
+
+Viewfinders can hold colored glass panes or special shader items:
+
+```java
+@Override
+public boolean canPlaceItem(int index, ItemStack stack) {
+    return this.isEmpty() && 
+        (stack.getItem() instanceof BlockItem bi && 
+         bi.getBlock() instanceof StainedGlassPaneBlock) ||
+        (CompatHandler.SUPPLEMENTARIES && 
+         SuppCompat.getShaderForItem(stack.getItem()) != null);
+}
+```
+
+<Steps>
+  <Step title="Obtain Glass Pane">
+    Craft or find any colored stained glass pane.
+  </Step>
+  
+  <Step title="Insert Lens">
+    Sneak + right-click on the viewfinder with the glass pane.
+  </Step>
+  
+  <Step title="Color Effect">
+    The broadcast feed will display with the colored tint.
+  </Step>
+  
+  <Step title="Remove Lens">
+    Sneak + right-click again to eject the glass pane.
+  </Step>
+</Steps>
+
+<Note>
+**Supplementaries Compatibility**: If Supplementaries is installed, you can also use shader items for advanced visual effects like night vision or camera filters.
+</Note>
+
+## Broadcasting System
+
+Viewfinders implement the `IBroadcastSource` interface:
+
+```java
+public interface IBroadcastSource {
+    UUID getUUID();
+    
+    @Nullable IVideoSource getBroadcastVideo();
+    
+    default void ensureLinked(Level level, IBroadcastLocation location) {
+        if (level instanceof ServerLevel sl) {
+            BroadcastManager.getInstance(sl)
+                    .linkFeed(this.getUUID(), location);
+        }
+    }
+}
+```
+
+### Unique Identifier
+
+Each viewfinder has a persistent UUID:
+
+```java
+private UUID myUUID;
+
+public ViewFinderBlockEntity(BlockPos pos, BlockState state) {
+    super(VistaMod.VIEWFINDER_TILE.get(), pos, state);
+    this.myUUID = UUID.randomUUID();
+    this.videoSource = new LiveFeedVideoSource(this);
+    this.selfAccess = ViewFinderAccess.block(this);
+}
+```
+
+This UUID is saved and used to link hollow cassettes to the viewfinder.
+
+### Auto-Registration
+
+Viewfinders automatically register with the `BroadcastManager`:
+
+```java
+@Override
+public void setLevel(Level level) {
+    super.setLevel(level);
+    this.ensureLinked(level, LevelBELocation.of(this));
+}
+```
+
+And unregister when removed:
+
+```java
+@Override
+protected void onRemove(BlockState oldState, Level level, BlockPos pos, 
+                       BlockState newState, boolean movedByPiston) {
+    Containers.dropContentsOnDestroy(oldState, newState, level, pos);
+    super.onRemove(oldState, level, pos, newState, movedByPiston);
+    
+    if (oldState.getBlock() == this && newState.getBlock() != this &&
+        level instanceof ServerLevel sl) {
+        BroadcastManager.getInstance(sl)
+            .unlinkFeed(LevelBELocation.of(level, pos));
+    }
+}
+```
+
+## Live Feed Video Source
+
+Viewfinders create a `LiveFeedVideoSource` for broadcasting:
+
+```java
+private final LiveFeedVideoSource videoSource;
+
+@Override
+public @Nullable IVideoSource getBroadcastVideo() {
+    return this.videoSource;
+}
+```
+
+This video source:
+- Renders from the viewfinder's perspective
+- Updates based on the camera's position and rotation
+- Applies zoom and lens effects
+- Streams to all connected TVs
+
+## Rendering
+
+Viewfinders use animated entity block rendering:
+
+```java
+@Override
+public RenderShape getRenderShape(BlockState state) {
+    return RenderShape.ENTITYBLOCK_ANIMATED;
+}
+```
+
+The collision shape becomes empty when a player is actively viewing through it:
+
+```java
+@Override
+protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, 
+                              CollisionContext context) {
+    if (PlatHelper.getPhysicalSide().isClient() && 
+        ViewFinderController.isActiveAt(pos)) {
+        return Shapes.empty();
+    }
+    return Shapes.block();
+}
+```
+
+<Note>
+This prevents the viewfinder from blocking the player's view when they're using the control GUI.
+</Note>
+
+## Tick Behavior
+
+Viewfinders update their interpolation values each tick:
+
+```java
+public static void tick(Level level, BlockPos pos, BlockState state, 
+                       ViewFinderBlockEntity tile) {
+    tile.prevYaw = tile.yaw;
+    tile.prevPitch = tile.pitch;
+}
+```
+
+This ensures smooth rotation animations even at low frame rates.
+
+## ComputerCraft Integration
+
+Viewfinders can be controlled via ComputerCraft peripherals:
+
+```java
+public Object ccPeripheral = null;
+```
+
+<Accordion title="Peripheral API">
+If ComputerCraft is installed, viewfinders expose a peripheral with methods to:
+- Get and set yaw, pitch, and zoom
+- Lock and unlock rotation
+- Query the current broadcast status
+- Control the camera programmatically
+
+See the ComputerCraft integration docs for full API details.
+</Accordion>
+
+## Tips and Tricks
+
+<AccordionGroup>
+  <Accordion title="Security Cameras">
+    - Place viewfinders at key locations around your base
+    - Link each to a different hollow cassette
+    - Set up a control room with multiple TVs
+    - Lock cameras after positioning to prevent tampering
+    - Use colored lenses for visual organization (red = front door, blue = vault, etc.)
+  </Accordion>
+  
+  <Accordion title="Cinematic Shots">
+    - Mount on walls or ceilings for interesting angles
+    - Use maximum zoom for dramatic close-ups
+    - Slowly rotate with redstone for panning shots
+    - Combine multiple angles for multi-cam setups
+  </Accordion>
+  
+  <Accordion title="Automation">
+    - Use Supplementaries cranks with Create motors for automated rotation
+    - ComputerCraft scripts can create patrol patterns
+    - Motion detection possible with entity-aware scripts
+    - Lock cameras during specific redstone events
+  </Accordion>
+</AccordionGroup>
+
+<Card title="Next: Broadcasting System" icon="arrow-right" href="/features/broadcasting">
+  Learn how the broadcast manager links viewfinders to TVs
+</Card>

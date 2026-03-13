@@ -1,0 +1,402 @@
+---
+title: "Broadcast System"
+description: "API documentation for Vista's broadcast system that manages live video feeds between ViewFinders and TVs"
+---
+
+## Overview
+
+The broadcast system is Vista's core networking feature that allows ViewFinders to transmit live video feeds to TVs across dimensions. It uses a UUID-based registry to link broadcast sources (ViewFinders) with their locations, enabling remote video transmission.
+
+## BroadcastManager
+
+The `BroadcastManager` is a world-saved data structure that manages all active broadcast connections in a level.
+
+**Location**: `net.mehvahdjukaar.vista.common.broadcast.BroadcastManager`
+
+### Getting the Instance
+
+```java
+BroadcastManager manager = BroadcastManager.getInstance(level);
+```
+
+### Public API Methods
+
+<ParamField path="linkFeed" type="void">
+  Links a broadcast feed UUID to a physical location.
+  
+  ```java
+  void linkFeed(UUID feedUUID, IBroadcastLocation projectorPos)
+  ```
+  
+  **Parameters:**
+  - `feedUUID` - Unique identifier for the broadcast feed
+  - `projectorPos` - Location of the broadcast source (ViewFinder)
+  
+  **Example:**
+  ```java
+  UUID feedId = UUID.randomUUID();
+  IBroadcastLocation location = LevelBELocation.of(level, blockPos);
+  manager.linkFeed(feedId, location);
+  ```
+</ParamField>
+
+<ParamField path="unlinkFeed" type="void">
+  Unlinks a broadcast feed by location or UUID.
+  
+  ```java
+  void unlinkFeed(IBroadcastLocation projectorPos)
+  void unlinkFeed(UUID feedUUID)
+  ```
+  
+  **Parameters:**
+  - `projectorPos` - Location to unlink
+  - `feedUUID` - Feed UUID to unlink
+</ParamField>
+
+<ParamField path="getFeedLocationById" type="IBroadcastLocation">
+  Retrieves the location of a broadcast feed by its UUID.
+  
+  ```java
+  @Nullable IBroadcastLocation getFeedLocationById(UUID viewFinderUUID)
+  ```
+  
+  **Returns:** The broadcast location, or null if not found
+</ParamField>
+
+<ParamField path="getIdOfFeedAt" type="UUID">
+  Gets the feed UUID at a specific location.
+  
+  ```java
+  @Nullable UUID getIdOfFeedAt(IBroadcastLocation from)
+  ```
+  
+  **Returns:** The feed UUID, or null if no feed exists at that location
+</ParamField>
+
+<ParamField path="getBroadcast" type="IBroadcastSource">
+  Retrieves the actual broadcast source by feed ID.
+  
+  ```java
+  @Nullable IBroadcastSource getBroadcast(UUID feedId, boolean clientSide)
+  ```
+  
+  **Parameters:**
+  - `feedId` - The broadcast feed UUID
+  - `clientSide` - Whether this is called on the client
+  
+  **Returns:** The broadcast source, or null if invalid/not found
+  
+  **Note:** Automatically unlinks invalid feeds on the server side.
+</ParamField>
+
+<ParamField path="getAll" type="Iterable<Map.Entry<UUID, IBroadcastLocation>>">
+  Returns all active broadcast connections.
+  
+  ```java
+  Iterable<Map.Entry<UUID, IBroadcastLocation>> getAll()
+  ```
+</ParamField>
+
+### Thread Safety
+
+The BroadcastManager uses internal synchronization with a lock object and publishes immutable snapshots for fast concurrent reads. All write operations are synchronized and trigger dirty marking for world save.
+
+### Serialization
+
+<CodeGroup>
+```java Codec
+public static final Codec<BroadcastManager> CODEC =
+    Codec.unboundedMap(UUIDUtil.STRING_CODEC, IBroadcastLocation.CODEC)
+        .xmap(
+            map -> {
+                BroadcastManager storage = new BroadcastManager();
+                map.forEach((uuid, pos) -> storage.addFeedInternal(uuid, pos, false));
+                storage.publishSnapshot();
+                return storage;
+            },
+            storage -> storage.snapshot
+        );
+```
+
+```java StreamCodec
+public static final StreamCodec<RegistryFriendlyByteBuf, BroadcastManager> STREAM_CODEC =
+    ByteBufCodecs.map(
+        i -> new HashMap<>(),
+        UUIDUtil.STREAM_CODEC,
+        IBroadcastLocation.STREAM_CODEC
+    ).map(
+        map -> {
+            BroadcastManager storage = new BroadcastManager();
+            map.forEach((uuid, pos) -> storage.addFeedInternal(uuid, pos, true));
+            storage.publishSnapshot();
+            return storage;
+        },
+        storage -> new HashMap<>(storage.snapshot)
+    );
+```
+</CodeGroup>
+
+## IBroadcastLocation
+
+Represents a location where a broadcast source exists. Uses a registry-based dispatch codec for extensibility.
+
+**Location**: `net.mehvahdjukaar.vista.common.broadcast.IBroadcastLocation`
+
+### Methods
+
+<ResponseField name="get" type="TriResult<IBroadcastSource>">
+  Retrieves the broadcast source at this location.
+  
+  ```java
+  TriResult<IBroadcastSource> get(boolean isClient)
+  ```
+  
+  **Returns:**
+  - `TriResult.valid(source)` - Valid broadcast source found
+  - `TriResult.invalid()` - Location exists but no valid source (server only)
+  - `TriResult.empty()` - Location not loaded or no block entity
+</ResponseField>
+
+<ResponseField name="type" type="BroadcastLocationType">
+  Returns the location type for codec dispatch.
+</ResponseField>
+
+<ResponseField name="getTooltipComponent" type="MutableComponent">
+  Creates a tooltip component describing this location.
+</ResponseField>
+
+### Codecs
+
+```java
+Codec<IBroadcastLocation> CODEC = Codec.lazyInitialized(
+    () -> VistaMod.BROADCAST_LOCATION_REGISTRY.byNameCodec()
+        .dispatch(IBroadcastLocation::type, BroadcastLocationType::codec));
+
+StreamCodec<RegistryFriendlyByteBuf, IBroadcastLocation> STREAM_CODEC =
+    ByteBufCodecs.registry(VistaMod.BROADCAST_LOCATION_REGISTRY.key())
+        .dispatch(IBroadcastLocation::type, BroadcastLocationType::streamCodec);
+```
+
+## LevelBELocation
+
+The default implementation of `IBroadcastLocation` that references a block entity at a global position.
+
+**Location**: `net.mehvahdjukaar.vista.common.broadcast.LevelBELocation`
+
+### Structure
+
+```java
+public record LevelBELocation(GlobalPos globalPos) implements IBroadcastLocation
+```
+
+### Creating Instances
+
+<CodeGroup>
+```java From Level and BlockPos
+LevelBELocation location = LevelBELocation.of(level, blockPos);
+```
+
+```java From BlockEntity
+LevelBELocation location = LevelBELocation.of(blockEntity);
+```
+
+```java From GlobalPos
+LevelBELocation location = new LevelBELocation(globalPos);
+```
+</CodeGroup>
+
+### Implementation Details
+
+The `get()` method:
+1. Resolves the dimension on the appropriate side (client/server)
+2. Checks if the position is loaded
+3. Verifies the block entity implements `IBroadcastSource`
+4. Returns appropriate `TriResult` status
+
+```java
+@Override
+public TriResult<IBroadcastSource> get(boolean isClient) {
+    Level otherLevel = isClient
+        ? VistaModClient.getLocalLevelByDimension(globalPos.dimension())
+        : PlatHelper.getCurrentServer().getLevel(globalPos.dimension());
+
+    if (otherLevel != null && otherLevel.isLoaded(globalPos.pos())) {
+        if (otherLevel.getBlockEntity(globalPos.pos()) instanceof IBroadcastSource provider) {
+            return TriResult.valid(provider);
+        } else if (!isClient) {
+            return TriResult.invalid();
+        }
+    }
+    return TriResult.empty();
+}
+```
+
+## BroadcastLocationType
+
+A record that holds codec and stream codec for a broadcast location type.
+
+**Location**: `net.mehvahdjukaar.vista.common.broadcast.BroadcastLocationType`
+
+```java
+public record BroadcastLocationType(
+    MapCodec<? extends IBroadcastLocation> codec,
+    StreamCodec<ByteBuf, ? extends IBroadcastLocation> streamCodec
+)
+```
+
+### Registration
+
+```java
+// In VistaMod.java
+public static final Registry<BroadcastLocationType> BROADCAST_LOCATION_REGISTRY =
+    RegHelper.registerRegistry(res("broadcast_location"), true);
+
+public static final Supplier<BroadcastLocationType> LEVEL_BE_BROADCAST =
+    RegHelper.register(res("level_be_location"),
+        () -> LevelBELocation.TYPE, BROADCAST_LOCATION_REGISTRY.key());
+```
+
+## IBroadcastSource
+
+Interface for objects that can broadcast video feeds (e.g., ViewFinders, cassette tapes).
+
+**Location**: `net.mehvahdjukaar.vista.common.cassette.IBroadcastSource`
+
+### Methods
+
+<ResponseField name="getUUID" type="UUID">
+  Returns the unique identifier for this broadcast source.
+  
+  ```java
+  UUID getUUID()
+  ```
+</ResponseField>
+
+<ResponseField name="getBroadcastVideo" type="IVideoSource">
+  Returns the video source for this broadcast.
+  
+  ```java
+  @Nullable IVideoSource getBroadcastVideo()
+  ```
+</ResponseField>
+
+<ResponseField name="ensureLinked" type="void">
+  Ensures this broadcast source is linked to a location in the BroadcastManager.
+  
+  ```java
+  default void ensureLinked(Level level, IBroadcastLocation location) {
+      if (level instanceof ServerLevel sl) {
+          BroadcastManager.getInstance(sl)
+              .linkFeed(this.getUUID(), location);
+      }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="removeLink" type="void">
+  Removes this broadcast source's link from the BroadcastManager.
+  
+  ```java
+  default void removeLink(Level level) {
+      if (level instanceof ServerLevel sl) {
+          BroadcastManager.getInstance(sl)
+              .unlinkFeed(this.getUUID());
+      }
+  }
+  ```
+</ResponseField>
+
+## TriResult
+
+A three-state result type used for broadcast source lookups.
+
+**Location**: `net.mehvahdjukaar.vista.common.broadcast.TriResult`
+
+### States
+
+<ResponseField name="valid" type="TriResult<T>">
+  Contains a valid value.
+  
+  ```java
+  TriResult<T> result = TriResult.valid(value);
+  ```
+</ResponseField>
+
+<ResponseField name="invalid" type="TriResult<T>">
+  Indicates the lookup failed and the entry should be removed.
+  
+  ```java
+  TriResult<T> result = TriResult.invalid();
+  ```
+</ResponseField>
+
+<ResponseField name="empty" type="TriResult<T>">
+  Indicates the location is not loaded yet (temporary state).
+  
+  ```java
+  TriResult<T> result = TriResult.empty();
+  ```
+</ResponseField>
+
+### Methods
+
+```java
+boolean isValid()       // Returns true for valid or empty
+T getValue()            // Returns the value or null
+boolean isEmpty()       // Returns true if valid but value is null
+void ifValid(Consumer<T> consumer)    // Executes if valid and not null
+void ifPresent(Consumer<T> consumer)  // Executes if value is not null
+```
+
+## Usage Example
+
+<Accordion title="Complete Broadcast System Example">
+```java
+import net.mehvahdjukaar.vista.common.broadcast.*;
+import net.mehvahdjukaar.vista.common.cassette.IBroadcastSource;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import java.util.UUID;
+
+public class BroadcastExample {
+    
+    public void setupBroadcast(Level level, BlockPos viewFinderPos, UUID feedId) {
+        // Get the broadcast manager
+        BroadcastManager manager = BroadcastManager.getInstance(level);
+        
+        // Create a location for the ViewFinder
+        IBroadcastLocation location = LevelBELocation.of(level, viewFinderPos);
+        
+        // Link the feed
+        manager.linkFeed(feedId, location);
+        
+        // Later, retrieve the broadcast source
+        IBroadcastSource source = manager.getBroadcast(feedId, level.isClientSide);
+        if (source != null) {
+            // Use the broadcast source
+            var video = source.getBroadcastVideo();
+        }
+    }
+    
+    public void cleanupBroadcast(Level level, UUID feedId) {
+        BroadcastManager manager = BroadcastManager.getInstance(level);
+        manager.unlinkFeed(feedId);
+    }
+    
+    public void listAllBroadcasts(Level level) {
+        BroadcastManager manager = BroadcastManager.getInstance(level);
+        for (var entry : manager.getAll()) {
+            UUID feedId = entry.getKey();
+            IBroadcastLocation location = entry.getValue();
+            System.out.println("Feed " + feedId + " at " + location);
+        }
+    }
+}
+```
+</Accordion>
+
+## See Also
+
+- [Cassette Registry](/api/cassette-registry) - For cassette tape broadcast sources
+- [Rendering](/api/rendering) - For how broadcasts are rendered on TVs
+- [ViewFinder Block](/features/viewfinders) - Primary broadcast source block

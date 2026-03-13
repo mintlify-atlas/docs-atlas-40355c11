@@ -1,0 +1,519 @@
+---
+title: "Rendering System"
+description: "API documentation for Vista's custom rendering system including TV screens, ViewFinder models, and live feed rendering"
+---
+
+## Overview
+
+Vista implements a sophisticated rendering system for displaying live video feeds and pre-recorded content on TV blocks. The system includes custom block entity renderers, level rendering for live feeds, and optimized LOD (Level of Detail) management.
+
+## TvBlockEntityRenderer
+
+The main renderer for TV blocks that displays video content on screen.
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.TvBlockEntityRenderer`
+
+### Constructor
+
+```java
+public TvBlockEntityRenderer(BlockEntityRendererProvider.Context context)
+```
+
+### Configuration
+
+<ResponseField name="getViewDistance" type="int">
+  Returns the maximum render distance for TV blocks.
+  
+  ```java
+  @Override
+  public int getViewDistance() {
+      return 128; // Very high, throttled based on TV size
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="shouldRenderOffScreen" type="boolean">
+  Determines if the TV should render when off-screen.
+  
+  ```java
+  @Override
+  public boolean shouldRenderOffScreen(TVBlockEntity blockEntity) {
+      return PlatHelper.getPlatform().isFabric();
+  }
+  ```
+</ResponseField>
+
+### Render Method
+
+```java
+@Override
+public void render(
+    TVBlockEntity blockEntity,
+    float partialTick,
+    PoseStack poseStack,
+    MultiBufferSource buffer,
+    int light,
+    int overlay
+)
+```
+
+#### Rendering Pipeline
+
+1. **Screen State Check**: Returns early if screen is off
+2. **LOD Culling**: Performs frustum and distance-based culling
+3. **Size-based LOD**: Adjusts rendering based on TV size (1x1, 2x2, etc.)
+4. **Screen Positioning**: Calculates screen center and applies transformations
+5. **Video Frame Rendering**: Gets vertex consumer from video source
+6. **Lighting**: Uses sky brightness for screen illumination
+7. **Debug Rendering**: Optional debug overlay
+
+### Key Features
+
+<ParamField path="LOD System" type="feature">
+  TVs use distance-based LOD to optimize performance:
+  
+  ```java
+  LOD lod = LOD.at(blockEntity);
+  int screenSize = blockEntity.getScreenPixelWidth();
+  
+  // Frustum culling
+  if (lod.isPlaneCulled(dir, 0.5f, screenSize / 16f * 1.5f, 0f)) return;
+  
+  // Size-based LOD
+  int connectedW = blockEntity.getConnectedCount();
+  if (connectedW == 1 && !lod.isMedium()) return;
+  if (connectedW == 2 && !lod.isFar()) return;
+  ```
+</ParamField>
+
+<ParamField path="Dynamic Updates" type="feature">
+  Video updates are throttled based on distance:
+  
+  ```java
+  boolean paused = blockEntity.isPaused();
+  boolean shouldUpdate = !paused && lod.within(ClientConfigs.UPDATE_DISTANCE.get());
+  ```
+</ParamField>
+
+<ParamField path="Pixel Scaling" type="feature">
+  Screen resolution can be dynamically adjusted:
+  
+  ```java
+  int pixelEffectRes = ClientConfigs.SCALE_PIXELS.get() 
+      ? screenSize 
+      : TVBlockEntity.MIN_SCREEN_PIXEL_SIZE;
+  ```
+</ParamField>
+
+### Quad Rendering
+
+The renderer uses a custom quad rendering method for the TV screen:
+
+```java
+public static void addQuad(
+    VertexConsumer builder,
+    PoseStack poseStack,
+    float x0, float y0,
+    float x1, float y1,
+    int light
+)
+```
+
+**Parameters:**
+- `x0, y0` - Bottom-left corner
+- `x1, y1` - Top-right corner
+- `light` - Packed light value (LightTexture format)
+
+**Vertex Order:**
+```
+(x0,y1) -------- (x1,y1)
+   |                |
+   |                |
+(x0,y0) -------- (x1,y0)
+```
+
+### Debug Rendering
+
+When `ClientConfigs.rendersDebug()` is enabled, displays:
+- Update rate (frame time)
+- Average update time in milliseconds
+- Enderman animation state
+
+```java
+if (ClientConfigs.rendersDebug()) {
+    if (videoSource instanceof BroadcastVideoSource(UUID uuid)) {
+        renderDebug(uuid, poseStack, buffer, partialTick, blockEntity);
+    }
+}
+```
+
+## ViewFinderBlockEntityRenderer
+
+Renderer for ViewFinder blocks with animated camera models.
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.ViewFinderBlockEntityRenderer`
+
+### Model Structure
+
+```java
+private final ModelPart head;      // Camera head
+private final ModelPart legs;      // Tripod legs container
+private final ModelPart legsVisual; // Visible tripod legs
+private final ModelPart pivot;     // Rotation pivot
+private final ModelPart lens;      // Camera lens overlay
+private final ModelPart base;      // Tripod base
+private final ModelPart model;     // Root model
+```
+
+### Model Creation
+
+```java
+public static LayerDefinition createMesh()
+```
+
+Defines the ViewFinder model geometry:
+- **Legs**: 2 vertical supports (5,−4,−2) with size (2,10,4)
+- **Head**: Camera body (−5,−6,−4) with size (10,12,8)
+- **Base**: Platform (−7,6,−7) with size (14,2,14)
+- **Lens**: Front camera lens (−3,−4,−5) with size (6,6,1)
+
+### Animation System
+
+The ViewFinder animates based on pitch and yaw:
+
+```java
+float pitchRad = tile.getPitch(partialTick) * Mth.DEG_TO_RAD;
+float yawRad = tile.getYaw(partialTick) * Mth.DEG_TO_RAD;
+
+// Transform forward vector
+Vector3f forward = new Vector3f(0f, 0, 1);
+forward.rotateX(Mth.PI - pitchRad);
+forward.rotateY(Mth.PI - yawRad);
+forward.rotate(rotation.invert());
+
+// Apply to model parts
+this.legs.yRot = yawRad;
+this.pivot.xRot = pitchRad;
+this.pivot.zRot = 0;
+```
+
+### Visibility Control
+
+```java
+boolean isControlledByLocalInstance = ViewFinderController.isActiveFor(tile);
+
+this.legsVisual.visible = !isControlledByLocalInstance;
+this.head.visible = !isControlledByLocalInstance;
+this.base.visible = true;
+this.lens.visible = false;
+```
+
+When the local player is controlling the ViewFinder, the model is hidden (first-person view).
+
+### Lens Rendering
+
+When a cassette tape is inserted, the lens overlay is rendered:
+
+```java
+ItemStack lens = tile.getDisplayedItem();
+if (!isControlledByLocalInstance && !lens.isEmpty() &&
+    !VistaLevelRenderer.isViewFinderRenderingLiveFeed(tile)) {
+    
+    ResourceLocation lensTexture = 
+        VistaModClient.VIEW_FINDER_LENS_TEXTURES.apply(lens.getItem());
+    VertexConsumer lensBuilder = 
+        bufferSource.getBuffer(RenderType.entityCutoutNoCull(lensTexture));
+    this.model.render(poseStack, lensBuilder, packedLight, packedOverlay);
+    
+    // Emissive overlay
+    ResourceLocation emissiveTexture = 
+        VistaModClient.VIEW_FINDER_LENS_EMISSIVE_TEXTURES.apply(lens.getItem());
+    if (emissiveTexture != null) {
+        VertexConsumer emissiveBuilder = 
+            bufferSource.getBuffer(RenderType.breezeEyes(emissiveTexture));
+        this.model.render(poseStack, emissiveBuilder, packedLight, packedOverlay);
+    }
+}
+```
+
+## VistaLevelRenderer
+
+Handles rendering the game world from ViewFinder perspectives for live feeds.
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.VistaLevelRenderer`
+
+### Main Render Method
+
+```java
+public static void render(LiveFeedTexture text, ViewFinderBlockEntity tile)
+```
+
+This method:
+1. Captures current render state
+2. Switches to ViewFinder camera
+3. Renders world to texture
+4. Applies post-processing
+5. Restores original state
+
+### Render Pipeline
+
+<CodeGroup>
+```java State Management
+// Save old state
+RenderTarget mainTarget = mc.getMainRenderTarget();
+Camera mainCamera = mc.gameRenderer.mainCamera;
+float oldRenderDistance = mc.gameRenderer.renderDistance;
+PostChain oldPostEffect = mc.gameRenderer.postEffect;
+LevelRendererCameraState oldCameraState = LevelRendererCameraState.capture(mc.levelRenderer);
+RenderSystemState oldRenderState = RenderSystemState.capture();
+```
+
+```java Camera Setup
+setupSceneCamera(tile, camera, partialTicks);
+canvas.bindWrite(true);
+RenderSystem.viewport(0, 0, canvas.width, canvas.height);
+float fov = tile.getFOV();
+mc.gameRenderer.renderDistance = Math.min(oldRenderDistance, calculateRenderDistance(fov));
+```
+
+```java World Rendering
+feedCameraState.apply(mc.levelRenderer);
+renderLevel(mc, canvas, camera, fov);
+feedCameraState.copyFrom(mc.levelRenderer);
+```
+
+```java State Restoration
+oldCameraState.apply(mc.levelRenderer);
+oldRenderState.apply();
+RenderSystem.clear(GL11C.GL_DEPTH_BUFFER_BIT, ON_OSX);
+```
+</CodeGroup>
+
+### Camera Setup
+
+```java
+private static void setupSceneCamera(
+    ViewFinderBlockEntity tile,
+    Camera dummyCamera,
+    float partialTicks
+)
+```
+
+Creates a dummy entity at the ViewFinder position with proper rotation:
+
+```java
+float pitch = tile.getPitch(partialTicks);
+float yaw = tile.getYaw(partialTicks);
+
+if (dummyCamera.entity == null) {
+    dummyCamera.entity = new Display.BlockDisplay(EntityType.BLOCK_DISPLAY, level);
+}
+Entity dummyCameraEntity = dummyCamera.getEntity();
+Vec3 pos = tile.getBlockPos().getCenter();
+dummyCameraEntity.setPos(pos);
+dummyCameraEntity.setXRot(pitch);
+dummyCameraEntity.setYRot(yaw + 180);
+
+dummyCamera.setPosition(pos);
+dummyCamera.setRotation(yaw, pitch);
+```
+
+### Projection Matrix
+
+Custom projection matrix with ViewFinder FOV:
+
+```java
+private static Matrix4f createProjectionMatrixForCamera(
+    GameRenderer gr,
+    RenderTarget target,
+    float fov
+) {
+    Matrix4f matrix4f = new Matrix4f();
+    float depthFar = gr.getDepthFar();
+    
+    return matrix4f.perspective(
+        fov * Mth.DEG_TO_RAD,
+        (float) target.width / (float) target.height,
+        ViewFinderBlockEntity.NEAR_PLANE,
+        depthFar
+    );
+}
+```
+
+### Section Occlusion Graph
+
+Vista manages separate occlusion graphs for each ViewFinder feed:
+
+```java
+private static final Set<SectionOcclusionGraph> MANAGED_GRAPHS = new WeakHashSet<>();
+private static final AtomicReference<SectionOcclusionGraph> MC_OWN_GRAPH = new AtomicReference<>(null);
+
+MANAGED_GRAPHS.add(feedCameraState.getOcclusionGraph());
+MC_OWN_GRAPH.set(oldCameraState.getOcclusionGraph());
+```
+
+This ensures chunk visibility is calculated independently for each camera.
+
+### Chunk Synchronization
+
+When chunks are loaded or compiled, they're synchronized across all managed graphs:
+
+```java
+public static void onChunkLoaded(ChunkPos chunkPos, SectionOcclusionGraph sectionOcclusionGraph) {
+    if (CompatHandler.SODIUM) return;
+    for (SectionOcclusionGraph graph : MANAGED_GRAPHS) {
+        if (graph != sectionOcclusionGraph) {
+            graph.onChunkLoaded(chunkPos);
+        }
+    }
+    SectionOcclusionGraph old = MC_OWN_GRAPH.get();
+    if (old != null && old != sectionOcclusionGraph) {
+        old.onChunkLoaded(chunkPos);
+    }
+}
+```
+
+## LevelRendererCameraState
+
+Caches rendering state for each ViewFinder camera.
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.LevelRendererCameraState`
+
+### State Fields
+
+```java
+private int lastCameraSectionX = Integer.MIN_VALUE;
+private int lastCameraSectionY = Integer.MIN_VALUE;
+private int lastCameraSectionZ = Integer.MIN_VALUE;
+private double prevCamX = Double.MIN_VALUE;
+private double prevCamY = Double.MIN_VALUE;
+private double prevCamZ = Double.MIN_VALUE;
+private double prevCamRotX = Double.MIN_VALUE;
+private double prevCamRotY = Double.MIN_VALUE;
+private ViewArea viewArea;
+private int lastViewDistance;
+private SectionOcclusionGraph sectionOcclusionGraph;
+private ObjectArrayList<SectionRenderDispatcher.RenderSection> visibleSections;
+```
+
+### Methods
+
+<ResponseField name="createNew" type="static LevelRendererCameraState">
+  Creates a new camera state with fresh occlusion graph.
+</ResponseField>
+
+<ResponseField name="capture" type="static LevelRendererCameraState">
+  Captures the current state from a LevelRenderer.
+</ResponseField>
+
+<ResponseField name="apply" type="void">
+  Applies this state to a LevelRenderer.
+</ResponseField>
+
+<ResponseField name="copyFrom" type="void">
+  Copies state from a LevelRenderer.
+</ResponseField>
+
+## TvItemRenderer
+
+Custom item renderer for TV items (when held or worn as helmet).
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.TvItemRenderer`
+
+### Render Method
+
+```java
+@Override
+public void renderByItem(
+    ItemStack itemStack,
+    ItemDisplayContext itemDisplayContext,
+    PoseStack poseStack,
+    MultiBufferSource buffer,
+    int light,
+    int overlay
+)
+```
+
+### Head Display
+
+When worn as a helmet, renders a smiley face:
+
+```java
+if (itemDisplayContext == ItemDisplayContext.HEAD) {
+    VertexConsumer vc = TvScreenVertexConsumers.getSmileTapeVC(buffer, le);
+    
+    float s = 6 / 16f;
+    poseStack.translate(0.5, 0.5, -0.005f);
+    light = LightTexture.pack(15, LightTexture.sky(light));
+    
+    addQuad(vc, poseStack, -s, -s, s, s, light);
+}
+```
+
+## FeedConnectionDebugRenderer
+
+Debug renderer for visualizing broadcast connections.
+
+**Location**: `net.mehvahdjukaar.vista.client.renderer.FeedConnectionDebugRenderer`
+
+### Features
+
+- Renders boxes at broadcast source locations
+- Displays feed UUIDs
+- Shows client vs server state (different colors)
+- Yellow = Client state, Green = Server state
+
+### Usage
+
+Enabled via Minecraft's F3+B debug rendering mode when Vista debug is active.
+
+```java
+@Override
+public void render(
+    PoseStack poseStack,
+    MultiBufferSource buffer,
+    double camX, double camY, double camZ
+) {
+    ClientLevel level = Minecraft.getInstance().level;
+    
+    // Render client state (yellow)
+    renderAll(poseStack, buffer, camX, camY, camZ, level, level, 
+        0.9f, 0.9f, 0.1f, 0);
+    
+    // Render server state (green) if available
+    MinecraftServer server = PlatHelper.getCurrentServer();
+    if (server != null) {
+        Level serverLevel = server.getLevel(level.dimension());
+        renderAll(poseStack, buffer, camX, camY, camZ, serverLevel, level,
+            0.1f, 0.9f, 0.4f, 0.1f);
+    }
+}
+```
+
+## Performance Considerations
+
+<Accordion title="LOD and Culling">
+Vista implements multiple levels of culling and LOD:
+
+1. **Distance-based**: TVs beyond view distance aren't rendered
+2. **Frustum culling**: TVs outside camera view are culled
+3. **Size-based LOD**: Smaller TVs require closer distance
+4. **Update throttling**: Video updates are paused when far away
+5. **Resolution scaling**: Screen resolution can be reduced for distant TVs
+</Accordion>
+
+<Accordion title="Live Feed Optimization">
+Live feed rendering is optimized through:
+
+1. **Separate occlusion graphs**: Each feed has independent chunk culling
+2. **Render distance limiting**: Configurable per-feed render distance
+3. **Weak reference caching**: Automatic cleanup of unused resources
+4. **State caching**: Camera states are cached and reused
+5. **Minimal state switching**: Render state is only changed when necessary
+</Accordion>
+
+## See Also
+
+- [Broadcast System](/api/broadcast-system) - For understanding feed management
+- [TV Block](/features/televisions) - User documentation for TV blocks
+- [ViewFinder Block](/features/viewfinders) - User documentation for ViewFinder blocks

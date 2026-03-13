@@ -1,0 +1,381 @@
+---
+title: 'Items'
+description: 'Cassette items and TV-related components'
+---
+
+## CassetteItem
+
+A cassette item that stores video content for playback on TVs.
+
+**Class**: `net.mehvahdjukaar.vista.common.cassette.CassetteItem`
+
+**Implements**: `ITvCassette`
+
+### Properties
+
+<ParamField path="rarity" type="Rarity.RARE">
+  Cassettes are rare items with special tooltips.
+</ParamField>
+
+<ParamField path="stackSize" type="1">
+  Cassettes do not stack.
+</ParamField>
+
+### Data Components
+
+<ParamField path="CASSETTE_TAPE_COMPONENT" type="DataComponentType<Holder<CassetteTape>>">
+  Stores the cassette tape data containing video URL and metadata.
+  
+  ```java
+  // From VistaMod.java
+  public static final Supplier<DataComponentType<Holder<CassetteTape>>> CASSETTE_TAPE_COMPONENT = 
+      RegHelper.registerDataComponent(res("cassette_tape"), () ->
+          DataComponentType.<Holder<CassetteTape>>builder()
+              .persistent(RegistryFileCodec.create(CASSETTE_TAPE_REGISTRY_KEY, CassetteTape.DIRECT_CODEC))
+              .networkSynchronized(ByteBufCodecs.holderRegistry(CASSETTE_TAPE_REGISTRY_KEY))
+              .build());
+  ```
+</ParamField>
+
+### Key Methods
+
+<ResponseField name="onCraftedPostProcess" type="void">
+  Called after crafting to assign supporter cassettes based on custom name.
+  
+  ```java
+  public void onCraftedPostProcess(ItemStack stack, Level level)
+  ```
+  
+  - Checks if custom name matches a supporter tape
+  - Automatically assigns matching tape from registry
+  - Removes custom name after assignment
+</ResponseField>
+
+<ResponseField name="assignCustomCassette" type="static void">
+  Assigns a cassette tape based on name matching.
+  
+  ```java
+  public static void assignCustomCassette(ItemStack stack, Level level, String name)
+  ```
+  
+  - Searches `SUPPORTER_TAPES_TAG` for matching tape
+  - Matches against tape registry key path
+  - Removes custom name on successful match
+</ResponseField>
+
+<ResponseField name="appendHoverText" type="void">
+  Adds tooltip information showing the tape name.
+  
+  ```java
+  public void appendHoverText(ItemStack stack, TooltipContext context, 
+      List<Component> tooltipComponents, TooltipFlag tooltipFlag)
+  ```
+  
+  - Supporter tapes: Show readable name in gray
+  - Regular tapes: Show translatable tooltip key
+</ResponseField>
+
+<ResponseField name="getAnalogSignalStrength" type="int">
+  Returns redstone comparator output strength.
+  
+  ```java
+  public int getAnalogSignalStrength(ItemStack stack)
+  ```
+  
+  - Returns tape's `getRedstoneOutput()` value (1-15)
+  - Returns 1 if no tape data present
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Creating a Cassette with Tape
+// Get a cassette tape from registry
+Registry<CassetteTape> registry = level.registryAccess()
+    .registryOrThrow(VistaMod.CASSETTE_TAPE_REGISTRY_KEY);
+Holder<CassetteTape> tapeHolder = registry.getHolder(ResourceKey.create(
+    VistaMod.CASSETTE_TAPE_REGISTRY_KEY, 
+    ResourceLocation.fromNamespaceAndPath("vista", "example_tape")
+)).orElse(null);
+
+// Create cassette item with tape
+ItemStack cassette = new ItemStack(VistaMod.CASSETTE.get());
+if (tapeHolder != null) {
+    cassette.set(VistaMod.CASSETTE_TAPE_COMPONENT.get(), tapeHolder);
+}
+```
+
+```java Reading Cassette Data
+ItemStack cassette = // ... get cassette stack
+Holder<CassetteTape> tape = cassette.get(VistaMod.CASSETTE_TAPE_COMPONENT.get());
+
+if (tape != null) {
+    CassetteTape tapeValue = tape.value();
+    int redstoneOutput = tapeValue.getRedstoneOutput();
+    // Use tape data...
+}
+```
+
+```java Supporter Cassette Creation
+// Name a cassette to automatically assign supporter tape
+ItemStack cassette = new ItemStack(VistaMod.CASSETTE.get());
+cassette.set(DataComponents.CUSTOM_NAME, Component.literal("supporter_name"));
+
+// On craft, this will search for matching supporter tape
+CassetteItem.assignCustomCassette(cassette, level);
+```
+</CodeGroup>
+
+---
+
+## HollowCassetteItem
+
+An empty cassette that can be linked to broadcast sources (ViewFinder or SignalProjector).
+
+**Class**: `net.mehvahdjukaar.vista.common.cassette.HollowCassetteItem`
+
+**Implements**: `ITvCassette`
+
+### Properties
+
+<ParamField path="rarity" type="Rarity.RARE">
+  Hollow cassettes are rare items.
+</ParamField>
+
+<ParamField path="stackSize" type="1">
+  Hollow cassettes do not stack.
+</ParamField>
+
+### Data Components
+
+<ParamField path="LINKED_FEED_COMPONENT" type="DataComponentType<UUID>">
+  Stores the UUID of the linked broadcast source.
+  
+  ```java
+  // From VistaMod.java
+  public static final Supplier<DataComponentType<UUID>> LINKED_FEED_COMPONENT = 
+      RegHelper.registerDataComponent(res("linked_feed"), () ->
+          DataComponentType.<UUID>builder()
+              .persistent(UUIDUtil.CODEC)
+              .networkSynchronized(UUIDUtil.STREAM_CODEC)
+              .build());
+  ```
+</ParamField>
+
+### Key Methods
+
+<ResponseField name="useOn" type="InteractionResult">
+  Links the hollow cassette to a broadcast source.
+  
+  ```java
+  public InteractionResult useOn(UseOnContext context)
+  ```
+  
+  - Right-click on ViewFinderBlockEntity or SignalProjectorBlockEntity
+  - Stores the block entity's UUID in the cassette
+  - Returns success on client and server
+</ResponseField>
+
+<ResponseField name="isFoil" type="boolean">
+  Returns `true` when linked to show enchantment glint.
+  
+  ```java
+  public boolean isFoil(ItemStack stack)
+  ```
+</ResponseField>
+
+<ResponseField name="appendHoverText" type="void">
+  Shows information about the linked broadcast source.
+  
+  ```java
+  public void appendHoverText(ItemStack stack, TooltipContext context,
+      List<Component> tooltipComponents, TooltipFlag tooltipFlag)
+  ```
+  
+  - Shows "Linked to [position]" if source exists
+  - Shows "Linked (Unknown)" if source not found
+  - Only displayed on client side
+</ResponseField>
+
+<ResponseField name="getAnalogSignalStrength" type="int">
+  Always returns maximum strength of 15.
+  
+  ```java
+  public int getAnalogSignalStrength(ItemStack stack)
+  ```
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Linking Hollow Cassette to ViewFinder
+// Server-side linking
+ViewFinderBlockEntity viewFinder = // ... get view finder
+ItemStack hollowCassette = new ItemStack(VistaMod.HOLLOW_CASSETTE.get());
+
+// Link the cassette
+hollowCassette.set(VistaMod.LINKED_FEED_COMPONENT.get(), viewFinder.getUUID());
+```
+
+```java Reading Linked Feed
+ItemStack hollowCassette = // ... get hollow cassette
+UUID feedId = hollowCassette.get(VistaMod.LINKED_FEED_COMPONENT.get());
+
+if (feedId != null) {
+    // On server
+    if (level instanceof ServerLevel serverLevel) {
+        BroadcastManager manager = BroadcastManager.getInstance(serverLevel);
+        IBroadcastLocation location = manager.getFeedLocationById(feedId);
+        // Use location...
+    }
+}
+```
+
+```java Checking if Cassette is Linked
+ItemStack cassette = // ... get cassette
+boolean isLinked = cassette.has(VistaMod.LINKED_FEED_COMPONENT.get());
+
+if (isLinked) {
+    UUID feedId = cassette.get(VistaMod.LINKED_FEED_COMPONENT.get());
+    // Cassette is linked to a broadcast source
+}
+```
+</CodeGroup>
+
+---
+
+## TVItem
+
+The TV block item that provides Enderman protection when worn.
+
+**Class**: `net.mehvahdjukaar.vista.common.tv.TVItem`
+
+**Extends**: `BlockItem`
+
+### Key Methods
+
+<ResponseField name="isEnderMask" type="boolean">
+  Returns `true` to prevent Enderman aggression when worn as helmet.
+  
+  ```java
+  @ForgeOverride
+  public boolean isEnderMask(ItemStack stack, Player player, EnderMan enderMan)
+  ```
+  
+  - Works when TV is equipped in head slot
+  - Protects player from direct Enderman attacks
+</ResponseField>
+
+### Properties
+
+Inherits standard BlockItem properties from TVBlock.
+
+### Code Example
+
+<CodeGroup>
+```java Wearing TV as Helmet
+// Equip TV in head slot programmatically
+Player player = // ... get player
+ItemStack tvItem = new ItemStack(VistaMod.TV_ITEM.get());
+player.setItemSlot(EquipmentSlot.HEAD, tvItem);
+
+// Now protected from Enderman aggression
+```
+
+```java Check Enderman Protection
+public boolean hasEndermanProtection(Player player) {
+    ItemStack helmet = player.getItemBySlot(EquipmentSlot.HEAD);
+    return helmet.getItem() instanceof TVItem;
+}
+```
+</CodeGroup>
+
+---
+
+## ITvCassette Interface
+
+Marker interface for items that can be inserted into TVs.
+
+**Interface**: `net.mehvahdjukaar.vista.common.cassette.ITvCassette`
+
+### Required Methods
+
+<ResponseField name="getAnalogSignalStrength" type="int">
+  Returns the redstone comparator output when inserted in a TV.
+  
+  ```java
+  int getAnalogSignalStrength(ItemStack stack);
+  ```
+  
+  **Implementations**:
+  - `CassetteItem`: Returns 1-15 based on tape data
+  - `HollowCassetteItem`: Always returns 15
+</ResponseField>
+
+### Code Example
+
+<CodeGroup>
+```java Custom Cassette Implementation
+public class CustomCassetteItem extends Item implements ITvCassette {
+    public CustomCassetteItem(Properties properties) {
+        super(properties);
+    }
+    
+    @Override
+    public int getAnalogSignalStrength(ItemStack stack) {
+        // Custom logic for redstone output
+        return 8; // Medium strength
+    }
+}
+```
+
+```java Check if Item is Cassette
+public boolean isCassette(ItemStack stack) {
+    return stack.getItem() instanceof ITvCassette;
+}
+
+public int getCassetteStrength(ItemStack stack) {
+    if (stack.getItem() instanceof ITvCassette cassette) {
+        return cassette.getAnalogSignalStrength(stack);
+    }
+    return 0;
+}
+```
+</CodeGroup>
+
+---
+
+## Registration
+
+All items are registered in `VistaMod.java`:
+
+```java source/common/src/main/java/net/mehvahdjukaar/vista/VistaMod.java
+public class VistaMod {
+    // Cassette registration
+    public static final Supplier<CassetteItem> CASSETTE = RegHelper.registerItem(res("cassette"),
+        () -> new CassetteItem(new Item.Properties()
+            .rarity(Rarity.RARE)
+            .stacksTo(1)));
+    
+    // Hollow cassette registration
+    public static final Supplier<HollowCassetteItem> HOLLOW_CASSETTE = RegHelper.registerItem(res("hollow_cassette"),
+        () -> new HollowCassetteItem(new Item.Properties()
+            .rarity(Rarity.RARE)
+            .stacksTo(1)));
+    
+    // TV item registration
+    public static final Supplier<BlockItem> TV_ITEM = RegHelper.registerItem(res("television"),
+        () -> new TVItem(TV.get(), new Item.Properties()));
+}
+```
+
+### Creative Tabs
+
+Items are added to creative tabs in `addItemsToTabs()`:
+
+- **TV & ViewFinder**: `CreativeModeTabs.REDSTONE_BLOCKS`
+- **Cassettes**: `CreativeModeTabs.TOOLS_AND_UTILITIES`
+- **Hollow Cassette**: `CreativeModeTabs.TOOLS_AND_UTILITIES`
+- **Music Disc**: `CreativeModeTabs.TOOLS_AND_UTILITIES` (after other music discs)
+
+Supporter cassettes (tagged with `SUPPORTER_TAPES_TAG`) are excluded from creative tabs.

@@ -1,0 +1,387 @@
+---
+title: 'Cassette Tapes'
+description: 'Everything you need to know about finding, crafting, and using cassette tapes in Vista'
+icon: 'cassette-tape'
+---
+
+Cassette tapes are the primary media format in Vista. They store video content that can be played on TVs, including both pre-recorded tapes and live camera feeds.
+
+## Types of Cassettes
+
+Vista features two main types of cassette items:
+
+<CardGroup cols={2}>
+  <Card title="Regular Cassettes" icon="cassette-tape">
+    Pre-recorded tapes with video content. Found as loot or created through special means. Each tape has unique content and metadata.
+  </Card>
+
+  <Card title="Hollow Cassettes" icon="cassette-tape">
+    Blank cassettes that can be linked to Viewfinders to create live camera feeds. Craftable and reusable.
+  </Card>
+</CardGroup>
+
+## Finding Cassette Tapes
+
+Cassette tapes can be found as loot in various locations throughout the world.
+
+### Loot Locations
+
+From `ModLootOverrides.java:23-32`, cassette tapes can be found in:
+
+<CardGroup cols={2}>
+  <Card title="Structures" icon="building">
+    - Trail Ruins (archaeology)
+    - Bastion Hoglin Stables
+    - Igloo chests
+    - Jungle Temples
+    - Woodland Mansions
+    - Stronghold Libraries
+  </Card>
+
+  <Card title="Generated Chests" icon="treasure-chest">
+    - Shipwreck Supply chests
+    - Dungeons
+    - Nether Fortresses
+    - Trial Chambers (Ominous rare rewards)
+  </Card>
+</CardGroup>
+
+<Note>
+Loot spawning can be toggled in the config with the `chest_drop` option. By default, it's enabled.
+</Note>
+
+### Mob Drops
+
+Special cassettes can also drop from mobs:
+
+#### Creeper Tapes
+
+From `ModLootOverrides.java:40-42`, Creepers drop cassette tapes when:
+- Killed specifically by **Pillagers**
+- The `creeper_drop` config option is enabled (default: true)
+
+This creates an interesting farming mechanic for obtaining rare tapes.
+
+#### Enderman Discs
+
+Endermen have a special loot table (`inject/enderman_disc`) that can drop unique cassette content when defeated.
+
+## Cassette Properties
+
+Each cassette tape stores several properties, defined in `CassetteTape.java:20-50`:
+
+```java
+public record CassetteTape(
+    ResourceLocation assetId,      // Video asset path
+    int color,                      // Display color
+    Optional<Holder<SoundEvent>> soundEvent,  // Audio track
+    Optional<Integer> soundDuration,          // Audio length in ticks
+    int comparatorOutput            // Redstone signal strength (0-15)
+)
+```
+
+### Visual Properties
+
+<CardGroup cols={2}>
+  <Card title="Asset ID" icon="file-video">
+    Points to the video content file. This determines what plays on the TV.
+  </Card>
+
+  <Card title="Color" icon="palette">
+    The decorative color displayed on the cassette item. Purely cosmetic.
+  </Card>
+</CardGroup>
+
+### Audio Properties
+
+<CardGroup cols={2}>
+  <Card title="Sound Event" icon="volume-high">
+    Optional audio track that plays in sync with the video. Loops based on the duration.
+  </Card>
+
+  <Card title="Sound Duration" icon="clock">
+    Length of the audio in ticks (20 ticks = 1 second). Required if a sound event is specified.
+  </Card>
+</CardGroup>
+
+<Warning>
+Cassette tapes with sound events MUST have a sound duration specified, or they will fail validation.
+</Warning>
+
+## Crafting Hollow Cassettes
+
+Hollow Cassettes are craftable items that serve as blank media for broadcast feeds.
+
+<Steps>
+  <Step title="Obtain Crafting Recipe">
+    Check your recipe book for the Hollow Cassette recipe. The exact recipe depends on your modpack configuration.
+  </Step>
+
+  <Step title="Craft the Cassette">
+    Craft a Hollow Cassette item. It will appear as a basic cassette without any special effects.
+  </Step>
+
+  <Step title="Link to a Viewfinder">
+    Right-click a Viewfinder block with the Hollow Cassette to link it. The cassette will gain an enchantment glint effect.
+  </Step>
+</Steps>
+
+### Linking Mechanism
+
+From `HollowCassetteItem.java:29-40`, the linking process:
+
+```java
+public InteractionResult useOn(UseOnContext context) {
+    Level level = context.getLevel();
+    BlockEntity be = level.getBlockEntity(context.getClickedPos());
+    if (be instanceof IBroadcastSource feed) {
+        if (!level.isClientSide) {
+            ItemStack stack = context.getItemInHand();
+            stack.set(VistaMod.LINKED_FEED_COMPONENT.get(), feed.getUUID());
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+    return super.useOn(context);
+}
+```
+
+The cassette stores the UUID of the Viewfinder, creating a persistent link.
+
+## Using Cassettes in TVs
+
+<Steps>
+  <Step title="Approach a TV Block">
+    Right-click any TV block (or the master block in a multi-block TV setup).
+  </Step>
+
+  <Step title="Insert Cassette">
+    With a cassette in hand, right-click the TV. You'll hear an insertion sound, and the cassette will be stored in the TV.
+  </Step>
+
+  <Step title="Power the TV">
+    Apply redstone power to the TV. The video will begin playing automatically.
+  </Step>
+
+  <Step title="Pause Playback (Optional)">
+    Hold **Shift** and right-click the TV to pause/unpause the video while it's powered.
+  </Step>
+
+  <Step title="Eject Cassette">
+    Right-click the TV again (with an empty hand or another cassette). The current cassette will pop out.
+  </Step>
+</Steps>
+
+### Insertion and Ejection
+
+From `TVBlockEntity.java:138-176`, the interaction logic:
+
+- **Shift + Right-click** (with cassette loaded and TV powered): Toggle pause
+- **Right-click** (with cassette loaded): Eject current cassette
+- **Right-click** (empty, with cassette in hand): Insert cassette
+
+```java
+if (!isEmpty && powered && player.isSecondaryUseActive()) {
+    this.paused = !this.paused;
+    this.setChanged();
+    return ItemInteractionResult.sidedSuccess(this.level.isClientSide);
+}
+```
+
+## Redstone Integration
+
+Cassettes provide comparator output when inserted into TVs:
+
+### Comparator Output Values
+
+<CardGroup cols={2}>
+  <Card title="Regular Cassettes" icon="signal">
+    Output defined in the cassette data (0-15). Defaults to 1 if not specified.
+  </Card>
+
+  <Card title="Hollow Cassettes" icon="signal">
+    Always output signal strength 15 when linked to a Viewfinder.
+  </Card>
+</CardGroup>
+
+From `TVBlockEntity.java:258-262`:
+```java
+public int getComparatorOutput() {
+    ItemStack displayed = this.getDisplayedItem();
+    if (displayed.getItem() instanceof ITvCassette tc) 
+        return tc.getAnalogSignalStrength(displayed);
+    return 0;
+}
+```
+
+This allows you to:
+- Detect when a TV contains a cassette
+- Distinguish between different types of content
+- Create automated systems based on cassette type
+
+## Custom Cassettes
+
+### Supporter Tapes
+
+Vista includes a special category of "supporter tapes" that can be created through naming:
+
+<Steps>
+  <Step title="Craft a Regular Cassette">
+    Create a standard cassette item.
+  </Step>
+
+  <Step title="Name It in an Anvil">
+    Use an anvil to rename the cassette to match a supporter tape ID.
+  </Step>
+
+  <Step title="The Cassette Transforms">
+    When you craft or first obtain the renamed cassette, it automatically converts to the supporter tape if the name matches.
+  </Step>
+</Steps>
+
+From `CassetteItem.java:38-57`, the transformation logic:
+
+```java
+public static void assignCustomCassette(ItemStack stack, Level level, String name) {
+    for (var h : level.registryAccess().registryOrThrow(
+            VistaMod.CASSETTE_TAPE_REGISTRY_KEY)
+            .getTagOrEmpty(VistaMod.SUPPORTER_TAPES_TAG)) {
+        var key = h.unwrapKey().get();
+        if (key.location().getPath().equals(name)) {
+            stack.set(VistaMod.CASSETTE_TAPE_COMPONENT.get(), h);
+            stack.remove(DataComponents.CUSTOM_NAME);
+            break;
+        }
+    }
+}
+```
+
+<Tip>
+Supporter tapes display a readable name in the tooltip instead of a translation key.
+</Tip>
+
+## Cassette Tooltip Information
+
+When you hover over a cassette, you'll see:
+
+### Regular Cassettes
+- Cassette type/name (translated)
+- Color indicator
+- Audio track information (if present)
+
+### Linked Hollow Cassettes
+- "Linked" indicator (enchantment glint)
+- Viewfinder location (dimension + coordinates)
+- Feed status (active/unknown)
+
+From `HollowCassetteItem.java:50-68`:
+```java
+UUID feedId = stack.get(VistaMod.LINKED_FEED_COMPONENT.get());
+if (feedId != null) {
+    IBroadcastLocation gp = connection.getFeedLocationById(feedId);
+    if (gp == null) {
+        tooltipComponents.add(Component.translatable(
+            "tooltip.vista.hollow_cassette.linked_unknown")
+            .withStyle(ChatFormatting.GRAY));
+    } else {
+        var tooltip = gp.getTooltipComponent(level);
+        tooltipComponents.add(tooltip.withStyle(ChatFormatting.GRAY));
+    }
+}
+```
+
+## JEI Integration
+
+If you have **Just Enough Items (JEI)** installed, Vista provides enhanced recipe integration:
+
+From `JEICompat.java:23-25`, cassettes are registered with subtype interpretation:
+```java
+registration.registerSubtypeInterpreter(
+    VistaMod.CASSETTE.get(), 
+    CassetteSubtypeInterpreter.INSTANCE
+);
+```
+
+This means:
+- Different cassette types appear as separate items in JEI
+- You can search for specific cassette content
+- Recipe lookups work correctly for individual tape types
+
+## Exposure Mod Integration
+
+If you have the **Exposure** mod installed, Vista adds a special "Picture Tape" item:
+
+<Card title="Picture Tape" icon="images">
+  A cassette that can hold photographs from the Exposure mod. Works similarly to photo albums but compatible with TVs.
+</Card>
+
+From `ExposureCompat.java:33-37`, Picture Tapes can store:
+- Individual photographs
+- Stacked photographs
+- Album contents
+
+This creates a cross-mod integration for displaying photos on TVs.
+
+## Configuration Options
+
+You can customize cassette behavior in `vista-common.toml`:
+
+```toml
+[general]
+# Whether creepers should drop tapes when killed by pillagers
+creeper_drop = true
+
+# Whether loot chests could contain cassette tapes
+chest_drop = true
+```
+
+From `CommonConfigs.java:27-32`.
+
+<Tip>
+Disabling `chest_drop` is useful if you want cassettes to be more rare and only obtainable through specific mechanics like creeper farming.
+</Tip>
+
+## Advanced: Creating Custom Cassette Packs
+
+You can create data packs that add custom cassette tapes to the game:
+
+1. Register cassette entries in the `vista:cassette_tape` registry
+2. Provide video assets in your resource pack
+3. Optionally add custom sound events
+4. Configure comparator output and visual properties
+
+Cassettes use a codec-based system for data-driven content, making them fully moddable without Java code.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cassette Won't Insert" icon="hand">
+    Make sure:
+    - You're clicking the correct TV (master block in multi-block setups)
+    - The TV doesn't already have a cassette (eject it first)
+    - The item is actually a valid cassette (implements `ITvCassette`)
+  </Accordion>
+
+  <Accordion title="No Video Playing" icon="tv">
+    Check that:
+    - The TV is receiving redstone power
+    - The cassette has valid asset data
+    - Your resource pack is loaded correctly
+    - The video isn't paused (try Shift + Right-click)
+  </Accordion>
+
+  <Accordion title="Hollow Cassette Not Working" icon="video-slash">
+    Verify:
+    - The cassette is linked (should have enchantment glint)
+    - The linked Viewfinder still exists
+    - You're in the same dimension as the Viewfinder
+    - The Viewfinder's chunk is loaded
+  </Accordion>
+
+  <Accordion title="Sound Not Playing" icon="volume-xmark">
+    Ensure:
+    - The cassette has a sound event defined
+    - Your game volume settings are correct
+    - You're close enough to the TV to hear it
+    - The sound file exists in your resource pack
+  </Accordion>
+</AccordionGroup>

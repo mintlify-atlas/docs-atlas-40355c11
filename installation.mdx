@@ -1,0 +1,281 @@
+---
+title: Installation
+description: Learn how to install Vista for both Fabric and NeoForge mod loaders
+icon: download
+---
+
+## Prerequisites
+
+Before installing Vista, ensure you have:
+
+- **Minecraft Version**: 1.21.1 or 1.21.2
+- **Java Version**: Java 21 or higher
+- A compatible mod loader (Fabric or NeoForge)
+
+## Choose Your Mod Loader
+
+Vista is available for both Fabric and NeoForge. Select the installation method that matches your mod loader.
+
+<CardGroup cols={2}>
+  <Card title="Fabric" icon="fabric" href="#fabric-installation">
+    Lightweight and flexible mod loader
+  </Card>
+  <Card title="NeoForge" icon="hammer" href="#neoforge-installation">
+    Feature-rich fork of Minecraft Forge
+  </Card>
+</CardGroup>
+
+## Fabric Installation
+
+<Steps>
+  <Step title="Install Fabric Loader">
+    Download and install Fabric Loader from the [official Fabric website](https://fabricmc.net/use/).
+    
+    Make sure to install version **0.16.3** or higher.
+  </Step>
+
+  <Step title="Install Required Dependencies">
+    Vista requires two dependencies to work properly on Fabric:
+
+    ### Fabric API
+    - **Required**: Yes
+    - **Download**: [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api) or [Modrinth](https://modrinth.com/mod/fabric-api)
+    - **Minimum Version**: 0.116.9+1.21.1
+
+    ### Moonlight Lib
+    - **Required**: Yes
+    - **Download**: [CurseForge](https://www.curseforge.com/minecraft/mc-mods/selene) or [Modrinth](https://modrinth.com/mod/moonlight)
+    - **Minimum Version**: 1.21-2.29.17
+    - **Recommended Version**: 1.21-2.29.19
+
+    <Note>
+      Moonlight Lib is also known as "Selene" on CurseForge.
+    </Note>
+  </Step>
+
+  <Step title="Download Vista">
+    Download the latest Fabric version of Vista:
+    
+    <CardGroup cols={2}>
+      <Card title="CurseForge" icon="fire" href="https://www.curseforge.com/minecraft/mc-mods/amendments">
+        Download from CurseForge
+      </Card>
+      <Card title="Modrinth" icon="m" href="https://modrinth.com/mod/vista_tv">
+        Download from Modrinth
+      </Card>
+    </CardGroup>
+
+    <Warning>
+      Make sure to download the **Fabric** version, which will have `-fabric` in the filename (e.g., `vista-1.21-3.0.7-fabric.jar`).
+    </Warning>
+  </Step>
+
+  <Step title="Install the Mod">
+    1. Locate your Minecraft installation folder:
+       - **Windows**: `%appdata%\.minecraft`
+       - **macOS**: `~/Library/Application Support/minecraft`
+       - **Linux**: `~/.minecraft`
+    
+    2. Navigate to the `mods` folder (create it if it doesn't exist)
+    
+    3. Place the downloaded Vista jar file, Fabric API, and Moonlight Lib into the `mods` folder
+  </Step>
+
+  <Step title="Launch Minecraft">
+    Start Minecraft using the Fabric profile. Vista should now be loaded!
+    
+    You can verify the installation by checking the mods list in the main menu.
+  </Step>
+</Steps>
+
+### Fabric Configuration
+
+Vista's Fabric configuration uses the standard `fabric.mod.json` format. The mod depends on:
+
+```json fabric.mod.json
+{
+  "depends": {
+    "fabric": "*",
+    "minecraft": ">=1.21.1 <1.21.2",
+    "moonlight": ">=1.21-2.29.17"
+  }
+}
+```
+
+## NeoForge Installation
+
+<Steps>
+  <Step title="Install NeoForge">
+    Download and install NeoForge from the [official NeoForged website](https://neoforged.net/).
+    
+    Make sure to install version **21.1.219** or higher (version range `[4,)` is supported).
+  </Step>
+
+  <Step title="Install Required Dependencies">
+    Vista requires Moonlight Lib to work properly on NeoForge:
+
+    ### Moonlight Lib
+    - **Required**: Yes
+    - **Download**: [CurseForge](https://www.curseforge.com/minecraft/mc-mods/selene) or [Modrinth](https://modrinth.com/mod/moonlight)
+    - **Minimum Version**: 1.21-2.29.17
+    - **Recommended Version**: 1.21-2.29.19
+
+    <Note>
+      Unlike Fabric, NeoForge does not require a separate API mod. Moonlight Lib is the only dependency.
+    </Note>
+  </Step>
+
+  <Step title="Download Vista">
+    Download the latest NeoForge version of Vista:
+    
+    <CardGroup cols={2}>
+      <Card title="CurseForge" icon="fire" href="https://www.curseforge.com/minecraft/mc-mods/amendments">
+        Download from CurseForge
+      </Card>
+      <Card title="Modrinth" icon="m" href="https://modrinth.com/mod/vista_tv">
+        Download from Modrinth
+      </Card>
+    </CardGroup>
+
+    <Warning>
+      Make sure to download the **NeoForge** version, which will have `-neoforge` in the filename (e.g., `vista-1.21-3.0.7-neoforge.jar`).
+    </Warning>
+  </Step>
+
+  <Step title="Install the Mod">
+    1. Locate your Minecraft installation folder:
+       - **Windows**: `%appdata%\.minecraft`
+       - **macOS**: `~/Library/Application Support/minecraft`
+       - **Linux**: `~/.minecraft`
+    
+    2. Navigate to the `mods` folder (create it if it doesn't exist)
+    
+    3. Place the downloaded Vista jar file and Moonlight Lib into the `mods` folder
+  </Step>
+
+  <Step title="Launch Minecraft">
+    Start Minecraft using the NeoForge profile. Vista should now be loaded!
+    
+    You can verify the installation by checking the mods list in the main menu.
+  </Step>
+</Steps>
+
+### NeoForge Configuration
+
+Vista's NeoForge configuration uses the `neoforge.mods.toml` format with the following dependencies:
+
+```toml neoforge.mods.toml
+[[dependencies.vista]]
+    modId = "neoforge"
+    type = "required"
+    versionRange = "[4,)"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.vista]]
+    modId = "minecraft"
+    type = "required"
+    versionRange = "[1.21.1,1.21.2)"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.vista]]
+    modId = "moonlight"
+    mandatory = true
+    versionRange = "[1.21-2.29.17,)"
+    ordering = "NONE"
+    side = "BOTH"
+```
+
+## Version Information
+
+<CodeGroup>
+
+```properties Current Version
+mod_version=1.21-3.0.7
+release_type=release
+```
+
+```properties Minecraft Support
+minecraft_version=1.21.1
+minecraft_min_version=1.21.1
+minecraft_max_version=1.21.2
+```
+
+```properties Loader Versions
+# Fabric
+fabric_loader_version=0.16.3
+fabric_api_version=0.116.9+1.21.1
+
+# NeoForge
+neo_version=21.1.219
+neo_version_range=[4,)
+loader_version_range=[4,)
+```
+
+```properties Dependencies
+moonlight_version=1.21-2.29.19
+moonlight_min_version=1.21-2.29.17
+```
+
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Mod conflicts with Supplementaries">
+    Vista may conflict with older versions of Supplementaries. Ensure you have Supplementaries version **1.20-2.8.0** or higher, or remove Supplementaries entirely.
+
+    ```json
+    "conflicts": {
+      "supplementaries": "<1.20-2.8.0"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Incompatible mods">
+    Vista is known to be incompatible with the following mods:
+    - **carpeted** - All versions
+    - **betterlily** - All versions
+    - **betterjukebox** - All versions
+
+    If you have any of these mods installed, you'll need to remove them to use Vista.
+  </Accordion>
+
+  <Accordion title="Missing Moonlight Lib">
+    If you see an error about missing dependencies, make sure you've installed Moonlight Lib (also known as Selene on CurseForge). This is required for both Fabric and NeoForge versions.
+  </Accordion>
+
+  <Accordion title="Wrong mod loader version">
+    Make sure you've downloaded the correct version for your mod loader:
+    - Fabric version includes `-fabric` in the filename
+    - NeoForge version includes `-neoforge` in the filename
+    
+    Installing the wrong version will cause the mod to fail to load.
+  </Accordion>
+
+  <Accordion title="Java version issues">
+    Vista requires Java 21 or higher. If you're getting errors related to Java versions, update your Java installation:
+    
+    ```properties
+    java_version=21
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/introduction">
+    Learn the basics of using Vista
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize Vista to your preferences
+  </Card>
+  <Card title="Features" icon="star" href="/features">
+    Explore all of Vista's features
+  </Card>
+  <Card title="API Reference" icon="code" href="/api">
+    Integrate Vista into your own mods
+  </Card>
+</CardGroup>

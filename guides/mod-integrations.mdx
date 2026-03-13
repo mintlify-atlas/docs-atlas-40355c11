@@ -1,0 +1,569 @@
+---
+title: 'Mod Integrations'
+description: 'Discover how Vista integrates with other popular Minecraft mods'
+icon: 'puzzle-piece'
+---
+
+Vista is designed to work seamlessly with many popular Minecraft mods, providing enhanced functionality and compatibility. This guide covers all major mod integrations.
+
+## Overview
+
+Vista automatically detects and integrates with compatible mods at runtime. From `CompatHandler.java:14-19`, the mod checks for:
+
+```java
+public static final boolean EXPOSURE = PlatHelper.isModLoaded("exposure");
+public static final boolean DISTANT_HORIZONS = PlatHelper.isModLoaded("distanthorizons");
+public static final boolean COMPUTER_CRAFT = PlatHelper.isModLoaded("computercraft");
+public static final boolean SUPPLEMENTARIES = PlatHelper.isModLoaded("supplementaries");
+public static final boolean IRIS = PlatHelper.isModLoaded("iris") || PlatHelper.isModLoaded("oculus");
+public static final boolean SODIUM = PlatHelper.isModLoaded("sodium") || PlatHelper.isModLoaded("embeddium");
+```
+
+No configuration is needed - integrations activate automatically when compatible mods are present.
+
+## ComputerCraft Integration
+
+<Note>
+Requires **ComputerCraft: Tweaked** to be installed.
+</Note>
+
+Vista adds peripheral support for Viewfinders, allowing you to control cameras programmatically with ComputerCraft computers.
+
+### Viewfinder Peripheral
+
+When you connect a computer to a Viewfinder (using networking cables), it becomes a peripheral with the type `"view_finder"`.
+
+#### Available Methods
+
+From `ViewFinderPeripheral.java:21-53`, the following Lua functions are available:
+
+<AccordionGroup>
+  <Accordion title="setYaw(value)" icon="code">
+    Sets the horizontal rotation of the camera.
+    
+    **Parameters:**
+    - `value` (number): Yaw angle in degrees
+    
+    **Example:**
+    ```lua
+    local viewfinder = peripheral.find("view_finder")
+    viewfinder.setYaw(90)  -- Point camera east
+    ```
+  </Accordion>
+
+  <Accordion title="getYaw()" icon="code">
+    Returns the current horizontal rotation.
+    
+    **Returns:** `number` - Current yaw in degrees
+    
+    **Example:**
+    ```lua
+    local yaw = viewfinder.getYaw()
+    print("Camera facing: " .. yaw .. " degrees")
+    ```
+  </Accordion>
+
+  <Accordion title="setPitch(value)" icon="code">
+    Sets the vertical tilt of the camera.
+    
+    **Parameters:**
+    - `value` (number): Pitch angle in degrees (-90 to 90)
+    
+    **Example:**
+    ```lua
+    viewfinder.setPitch(-45)  -- Tilt camera up 45 degrees
+    ```
+  </Accordion>
+
+  <Accordion title="getPitch()" icon="code">
+    Returns the current vertical tilt.
+    
+    **Returns:** `number` - Current pitch in degrees
+    
+    **Example:**
+    ```lua
+    local pitch = viewfinder.getPitch()
+    ```
+  </Accordion>
+
+  <Accordion title="setZoom(zoom)" icon="code">
+    Sets the zoom level of the camera.
+    
+    **Parameters:**
+    - `zoom` (integer): Zoom level from 1 to 44
+    
+    **Example:**
+    ```lua
+    viewfinder.setZoom(20)  -- Set to 20x zoom
+    ```
+    
+    <Note>Zoom is automatically clamped between 1 and 44.</Note>
+  </Accordion>
+
+  <Accordion title="getZoom()" icon="code">
+    Returns the current zoom level.
+    
+    **Returns:** `integer` - Current zoom level (1-44)
+    
+    **Example:**
+    ```lua
+    local zoom = viewfinder.getZoom()
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Automated Camera Systems
+
+With ComputerCraft, you can create sophisticated camera control systems:
+
+<CardGroup cols={2}>
+  <Card title="Security Cameras" icon="camera-security">
+    Program cameras to sweep back and forth, monitoring areas automatically.
+  </Card>
+
+  <Card title="Event Tracking" icon="bullseye-arrow">
+    Connect to sensors and have cameras point at specific locations when triggered.
+  </Card>
+
+  <Card title="Cinematic Sequences" icon="film">
+    Create smooth camera movements for recording or presentations.
+  </Card>
+
+  <Card title="Remote Control" icon="satellite-dish">
+    Build control panels to adjust multiple cameras from a central location.
+  </Card>
+</CardGroup>
+
+#### Example: Sweeping Security Camera
+
+```lua
+-- Sweep camera back and forth
+local viewfinder = peripheral.find("view_finder")
+local minYaw = -45
+local maxYaw = 45
+local speed = 2
+
+while true do
+    -- Sweep right
+    for yaw = minYaw, maxYaw, speed do
+        viewfinder.setYaw(yaw)
+        sleep(0.1)
+    end
+    
+    -- Sweep left
+    for yaw = maxYaw, minYaw, -speed do
+        viewfinder.setYaw(yaw)
+        sleep(0.1)
+    end
+end
+```
+
+### Signal Projector Peripheral
+
+Vista also adds peripheral support for Signal Projectors (if you're using that feature), though the specific methods depend on the projector's implementation.
+
+## Supplementaries Integration
+
+<Note>
+Requires **Supplementaries** to be installed.
+</Note>
+
+Supplementaries adds several enhancements to Vista's functionality.
+
+### Wrench Compatibility
+
+Viewfinders can be rotated using Supplementaries wrenches:
+
+- **Manual Rotation**: Right-click with a wrench to rotate the Viewfinder block
+- **Axis-Specific**: Rotation respects the axis you're targeting
+- **Angle Preservation**: The camera's pitch/yaw adjusts automatically to maintain the same view direction
+
+From `ViewFinderBlock.java:185-205`, the rotation system:
+
+```java
+public Optional<BlockState> getRotatedState(BlockState state, LevelAccessor levelAccessor, 
+                                            BlockPos blockPos, Rotation rotation, 
+                                            Direction axis, @Nullable Vec3 hit) {
+    boolean ccw = rotation == Rotation.COUNTERCLOCKWISE_90;
+    return BlockUtil.getRotatedDirectionalBlock(state, axis, ccw)
+           .or(() -> Optional.of(state));
+}
+```
+
+### Analog Rotation
+
+Supplementaries' analog rotation system works with Viewfinders:
+
+```java
+public void rotateAnalog(BlockState state, Level level, BlockPos pos, 
+                         Direction face, boolean ccw, float speed) {
+    if (level.getBlockEntity(pos) instanceof ViewFinderBlockEntity tile) {
+        speed = speed * 0.01f;
+        float deltaAngle = -speed * (ccw ? -1 : 1);
+        // Applies smooth, gradual rotation
+    }
+}
+```
+
+This allows for:
+- Motorized camera movements
+- Smooth panning with mechanical contraptions
+- Precise angle adjustments
+
+### Shader Filters
+
+From `SuppCompat.java:20-25`, you can insert special items into Viewfinders to apply shader effects:
+
+```java
+public static ResourceLocation getShaderForItem(Item item) {
+    if (item == QUARK_GLASS_PANE.get()) return RETRO_SHADER;
+    String shaderForItem = MobHeadShadersManager.INSTANCE.getShaderForItem(item);
+    return shaderForItem == null ? null : ResourceLocation.parse(shaderForItem);
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Quark Dirty Glass" icon="square-dashed">
+    Applies a retro NTSC codec shader (VHS-style effect) to the camera feed.
+  </Card>
+
+  <Card title="Mob Head Shaders" icon="head-side-mask">
+    Various mob heads apply different shader effects from Supplementaries' shader system.
+  </Card>
+</CardGroup>
+
+### Glass Pane Filters
+
+You can insert colored stained glass panes into Viewfinders to tint the camera feed. From `ViewFinderBlockEntity.java:117-120`:
+
+```java
+public boolean canPlaceItem(int index, ItemStack stack) {
+    return this.isEmpty() && (stack.getItem() instanceof BlockItem bi && 
+           bi.getBlock() instanceof StainedGlassPaneBlock) ||
+           (CompatHandler.SUPPLEMENTARIES && SuppCompat.getShaderForItem(stack.getItem()) != null);
+}
+```
+
+## Iris Shaders Integration
+
+<Note>
+Requires **Iris Shaders** or **Oculus** (Forge version) to be installed.
+</Note>
+
+Vista includes special compatibility for shader packs to ensure Viewfinder cameras render correctly.
+
+### Shader Compatibility Mode
+
+From `IrisCompat.java:132-136`, Vista provides a config option:
+
+```toml
+# Attempts to disable iris shaders in the live feed view
+iris_off_hack = true
+```
+
+When enabled (default), Vista:
+- Temporarily disables shaders during Viewfinder rendering
+- Prevents shader artifacts in camera feeds
+- Restores shader state after rendering
+- Maintains shadow and lighting information
+
+### Technical Details
+
+The integration uses a sophisticated state preservation system (`IrisCompat.java:32-53`):
+
+```java
+public static Runnable decorateRendererWithoutShaderPacks(Runnable renderTask) {
+    return () -> {
+        boolean oldShadowActive = ShadowRenderer.ACTIVE;
+        OldRenderState oldState = OldRenderState.loadFrom(CapturedRenderingState.INSTANCE);
+        WorldRenderingPipeline oldPipeline = getCurrentPipeline(lr);
+        
+        try {
+            ShadowRenderer.ACTIVE = false;
+            VISTA_RENDERING.set(true);
+            renderTask.run();
+        } finally {
+            // Restore all state
+        }
+    };
+}
+```
+
+This ensures:
+- No conflicts with shader rendering pipelines
+- Proper fog and lighting
+- Compatible with bobbing effects
+- Works with custom shader packs
+
+<Tip>
+If you experience visual glitches with specific shader packs, try toggling the `iris_off_hack` config option.
+</Tip>
+
+## Sodium/Embeddium Integration
+
+<Note>
+Requires **Sodium** (Fabric) or **Embeddium** (Forge) to be installed.
+</Note>
+
+Vista is fully compatible with Sodium's rendering optimizations. From `CompatHandler.java:19`:
+
+```java
+public static final boolean SODIUM = PlatHelper.isModLoaded("sodium") || 
+                                     PlatHelper.isModLoaded("embeddium");
+```
+
+The integration ensures:
+- Viewfinder cameras work with Sodium's chunk rendering
+- TV screens render efficiently with Sodium's optimizations
+- No performance degradation from compatibility issues
+
+## Distant Horizons Integration
+
+<Note>
+Requires **Distant Horizons** to be installed.
+</Note>
+
+Vista integrates with Distant Horizons to handle LOD (Level of Detail) rendering in camera feeds.
+
+### Configuration
+
+From `DistantHorizonsCompat.java`, Distant Horizons integration can be configured:
+
+```java
+public static void addConfigs(ConfigBuilder builder) {
+    // Adds DH-specific config options
+}
+```
+
+This prevents:
+- LOD rendering conflicts in Viewfinder feeds
+- Unexpected chunk loading behavior
+- Visual artifacts from LOD transitions
+
+<Warning>
+Viewfinder cameras may not render distant LOD chunks. The camera view is limited to normally loaded chunks for performance reasons.
+</Warning>
+
+## Exposure Integration
+
+<Note>
+Requires **Exposure** to be installed.
+</Note>
+
+Exposure adds photography mechanics to Minecraft, and Vista integrates to display photos on TVs.
+
+### Picture Tapes
+
+From `ExposureCompat.java:33-37`, Vista adds a new item:
+
+```java
+public static final Supplier<Item> PICTURE_TAPE = RegHelper.registerItem(
+    VistaMod.res("picture_tape"),
+    () -> new PictureTapeItem(new Item.Properties()
+        .component(PICTURE_TAPE_CONTENT.get(), new PictureTapeContent(List.of())))
+);
+```
+
+<CardGroup cols={2}>
+  <Card title="Picture Tapes" icon="images">
+    Special cassettes that can store photographs from Exposure. Insert photos and display them on TVs like a slideshow.
+  </Card>
+
+  <Card title="Photo Frames" icon="frame">
+    Exposure's picture frames can also be used as broadcast sources, allowing you to display framed photos on TVs.
+  </Card>
+</CardGroup>
+
+### Supported Content Types
+
+From `ExposureCompat.java:45-49`:
+
+```java
+private static boolean isPictureItem(ItemStack stack) {
+    Item item = stack.getItem();
+    return item instanceof PictureTapeItem ||
+           item instanceof PhotographItem || 
+           item instanceof StackedPhotographsItem || 
+           item instanceof AlbumItem;
+}
+```
+
+Picture Tapes can display:
+- Individual photographs
+- Stacked photographs (multiple photos)
+- Photo album contents
+
+### Picture Frame Video Source
+
+From `PictureFrameVideoSource.java`, Exposure's picture frames act as broadcast sources:
+
+- Link a Hollow Cassette to a picture frame
+- The TV displays whatever photo is in the frame
+- Change the photo in the frame to change what the TV shows
+
+<Tip>
+Use Picture Tapes for curated photo collections, or link to picture frames for dynamic photo displays that you can change anytime.
+</Tip>
+
+## JEI (Just Enough Items) Integration
+
+<Note>
+Requires **Just Enough Items** to be installed.
+</Note>
+
+From `JEICompat.java:13-43`, Vista provides full JEI integration:
+
+```java
+@JeiPlugin
+public class JEICompat implements IModPlugin {
+    @Override
+    public void registerItemSubtypes(ISubtypeRegistration registration) {
+        registration.registerSubtypeInterpreter(
+            VistaMod.CASSETTE.get(), 
+            CassetteSubtypeInterpreter.INSTANCE
+        );
+    }
+}
+```
+
+### Features
+
+<CardGroup cols={2}>
+  <Card title="Cassette Types" icon="list">
+    Each unique cassette appears as a separate entry in JEI, making it easy to browse available content.
+  </Card>
+
+  <Card title="Recipe Lookup" icon="magnifying-glass">
+    Right-click cassettes to see how to obtain them (crafting, loot, etc.).
+  </Card>
+
+  <Card title="Usage Lookup" icon="book">
+    See which recipes or mechanics use specific cassettes.
+  </Card>
+
+  <Card title="Search Support" icon="search">
+    Search for cassettes by name or content type in the JEI search bar.
+  </Card>
+</CardGroup>
+
+### Subtype Interpretation
+
+The integration uses component data to distinguish cassettes:
+
+```java
+public Object getSubtypeData(ItemStack stack, UidContext uidContext) {
+    return stack.get(VistaMod.CASSETTE_TAPE_COMPONENT.get());
+}
+```
+
+This means cassettes with different video content are treated as separate items in JEI, even though they're the same item type.
+
+## REI (Roughly Enough Items) Integration
+
+While not explicitly shown in the source files provided, Vista is designed to work with REI (the Fabric alternative to JEI) through similar mechanisms.
+
+## EMI Integration
+
+Vista's component-based cassette system should be compatible with EMI (another JEI alternative) out of the box, as EMI respects item components for differentiation.
+
+## Creating Your Own Integrations
+
+Vista's architecture makes it easy to add custom integrations:
+
+<Steps>
+  <Step title="Implement IBroadcastSource">
+    For blocks that should act as camera sources:
+    ```java
+    public interface IBroadcastSource {
+        UUID getUUID();
+        @Nullable IVideoSource getBroadcastVideo();
+    }
+    ```
+  </Step>
+
+  <Step title="Implement ITvCassette">
+    For items that should work in TVs:
+    ```java
+    public interface ITvCassette {
+        int getAnalogSignalStrength(ItemStack stack);
+    }
+    ```
+  </Step>
+
+  <Step title="Register with BroadcastManager">
+    Register your broadcast sources so they can be linked to TVs.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ComputerCraft Peripheral Not Detected" icon="computer">
+    Ensure:
+    - ComputerCraft: Tweaked is installed and loaded
+    - The Viewfinder is properly connected via networking cable
+    - You're using `peripheral.find("view_finder")` with the correct type name
+  </Accordion>
+
+  <Accordion title="Shader Effects Not Working" icon="wand-magic-sparkles">
+    Check that:
+    - Supplementaries is installed
+    - You're using compatible items (stained glass panes, supported mob heads)
+    - The Viewfinder isn't locked (items can't be inserted when locked)
+  </Accordion>
+
+  <Accordion title="Picture Tapes Not Available" icon="image">
+    Verify:
+    - Exposure mod is installed
+    - Both mods are compatible versions
+    - The Picture Tape item appears in the creative inventory under Tools & Utilities
+  </Accordion>
+
+  <Accordion title="Shader Glitches with Iris" icon="eye">
+    Try:
+    - Toggling the `iris_off_hack` config option
+    - Updating to the latest Iris/Oculus version
+    - Testing with different shader packs
+    - Reporting specific issues to the Vista issue tracker
+  </Accordion>
+</AccordionGroup>
+
+## Integration Summary
+
+<CardGroup cols={3}>
+  <Card title="ComputerCraft" icon="robot">
+    Peripheral API for automated camera control
+  </Card>
+
+  <Card title="Supplementaries" icon="toolbox">
+    Wrenches, shaders, and filter support
+  </Card>
+
+  <Card title="Iris/Oculus" icon="eye">
+    Shader pack compatibility
+  </Card>
+
+  <Card title="Sodium/Embeddium" icon="gauge-high">
+    Performance optimization compatibility
+  </Card>
+
+  <Card title="Distant Horizons" icon="mountain">
+    LOD rendering compatibility
+  </Card>
+
+  <Card title="Exposure" icon="camera">
+    Photo display and Picture Tapes
+  </Card>
+
+  <Card title="JEI" icon="book">
+    Recipe and item browsing
+  </Card>
+
+  <Card title="REI/EMI" icon="list">
+    Alternative recipe viewer support
+  </Card>
+
+  <Card title="Quark" icon="feather">
+    Dirty glass shader effect
+  </Card>
+</CardGroup>

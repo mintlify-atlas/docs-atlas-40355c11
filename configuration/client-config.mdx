@@ -1,0 +1,247 @@
+---
+title: 'Client Configuration'
+description: 'Client-side configuration options for Vista'
+icon: 'desktop'
+---
+
+The client configuration file contains settings that only affect the local client's rendering and performance. These settings are not synchronized with the server and can be customized per player.
+
+## Configuration File Location
+
+The client configuration file is located at:
+- **Forge**: `config/vista-client.toml`
+- **Fabric**: `config/vista-client.json5`
+
+## Television Settings
+
+### Visual Settings
+
+<ParamField path="render_distance" type="integer" default={64}>
+  Render distance that televisions use when rendering the live feed. This determines how far the TV camera can see.
+  
+  **Range**: 1-256 blocks
+  
+  <Note>
+    Decreasing this value can significantly improve performance, especially with multiple TVs.
+  </Note>
+  
+  **Performance Impact**: High
+</ParamField>
+
+<ParamField path="screen_effects" type="boolean" default={true}>
+  Enables or disables all TV screen visual effects. When disabled, the TV screen renders as a simple texture.
+  
+  **Options**:
+  - `true` (default) - All screen effects enabled
+  - `false` - Simple texture rendering only
+  
+  <Warning>
+    When disabled, all visual effect settings below are ignored.
+  </Warning>
+  
+  **Performance Impact**: Medium
+</ParamField>
+
+<ParamField path="pixel_density" type="float" default={1.37}>
+  Pixel density of television screens, measured in pixels per block side.
+  
+  **Range**: 0.1-10.0
+  
+  Higher values create sharper displays but may impact performance.
+  
+  **Performance Impact**: Medium
+</ParamField>
+
+<ParamField path="constant_pixel_density" type="boolean" default={true}>
+  Makes connected multi-block TVs maintain constant pixel density per block.
+  
+  **Options**:
+  - `true` (default) - Pixel density scales with TV size
+  - `false` - Pixel density remains fixed regardless of size
+  
+  <Note>
+    When enabled, larger TVs automatically increase their resolution to maintain visual quality.
+  </Note>
+</ParamField>
+
+<ParamField path="vignette" type="float" default={1.0}>
+  Amount of vignette (edge darkening) effect applied to the television live feed.
+  
+  **Range**: 0.0-1.0
+  - `0.0` - No vignette effect
+  - `1.0` (default) - Full vignette effect
+  
+  This creates a more authentic retro TV appearance.
+</ParamField>
+
+<ParamField path="turn_off_animation" type="boolean" default={true}>
+  Plays an animation when the television is turned on or off.
+  
+  **Options**:
+  - `true` (default) - Animations enabled
+  - `false` - Instant on/off with no animation
+</ParamField>
+
+### Live Feed Settings
+
+<ParamField path="draw_date" type="boolean" default={false}>
+  Draws the current date and time on the live feed texture.
+  
+  **Options**:
+  - `true` - Display date/time overlay
+  - `false` (default) - No date/time display
+</ParamField>
+
+<ParamField path="update_fps" type="double" default={10.0}>
+  How many times per second the television updates its live feed texture.
+  
+  **Range**: 0-60 FPS
+  
+  <Warning>
+    This setting requires a game restart to take effect.
+  </Warning>
+  
+  <Note>
+    Lowering this value improves performance but makes video less smooth. Fractional values are supported (e.g., 7.5).
+  </Note>
+  
+  **Performance Impact**: Very High
+</ParamField>
+
+<ParamField path="min_update_fps" type="double" default={4.0}>
+  The minimum update FPS for live feed. The mod throttles the update rate when FPS drops, and this serves as a lower limit.
+  
+  **Range**: 0-60 FPS
+  
+  <Warning>
+    This setting requires a game restart to take effect.
+  </Warning>
+  
+  **Performance Impact**: High
+</ParamField>
+
+<ParamField path="throttling_update_ms" type="double" default={16.66}>
+  The maximum number of milliseconds all live feed update logic can take before FPS throttling begins.
+  
+  **Range**: 0-1000000 milliseconds
+  
+  <Warning>
+    This setting requires a game restart to take effect.
+  </Warning>
+  
+  <Note>
+    16.66ms equals approximately 5 FPS. Lowering this improves overall game performance but may make TV video less smooth.
+  </Note>
+  
+  **Performance Impact**: High
+</ParamField>
+
+<ParamField path="update_distance" type="double" default={20}>
+  Distance from a TV (in blocks) within which the feed updates in real time.
+  
+  **Range**: 1-512 blocks
+  
+  TVs beyond this distance update less frequently to save performance.
+  
+  **Performance Impact**: Medium
+</ParamField>
+
+<ParamField path="resolution_scale" type="integer" default={8}>
+  Scale factor for live feed resolution. Higher values produce sharper images.
+  
+  **Range**: 1-32
+  
+  **Performance Impact**: High
+</ParamField>
+
+### Debug Settings
+
+<ParamField path="render_debug" type="boolean" default={false}>
+  Enables rendering of debug information for televisions.
+  
+  **Options**:
+  - `true` - Show debug overlays and information
+  - `false` (default) - Normal rendering
+  
+  Useful for developers and troubleshooting.
+</ParamField>
+
+## Performance Optimization
+
+<Accordion title="Potato PC Settings">
+  ```toml
+  [television.visuals]
+  render_distance = 32
+  screen_effects = false
+  
+  [television.live_feed]
+  update_fps = 5.0
+  min_update_fps = 2.0
+  throttling_update_ms = 8.0
+  update_distance = 10
+  resolution_scale = 4
+  ```
+  
+  Optimized for maximum performance on lower-end hardware.
+</Accordion>
+
+<Accordion title="Balanced Settings">
+  ```toml
+  [television.visuals]
+  render_distance = 64
+  screen_effects = true
+  pixel_density = 1.37
+  constant_pixel_density = true
+  vignette = 1.0
+  turn_off_animation = true
+  
+  [television.live_feed]
+  draw_date = false
+  update_fps = 10.0
+  min_update_fps = 4.0
+  throttling_update_ms = 16.66
+  update_distance = 20
+  resolution_scale = 8
+  render_debug = false
+  ```
+  
+  Default settings providing good balance between quality and performance.
+</Accordion>
+
+<Accordion title="High Quality Settings">
+  ```toml
+  [television.visuals]
+  render_distance = 128
+  screen_effects = true
+  pixel_density = 2.5
+  constant_pixel_density = true
+  vignette = 1.0
+  turn_off_animation = true
+  
+  [television.live_feed]
+  draw_date = false
+  update_fps = 30.0
+  min_update_fps = 15.0
+  throttling_update_ms = 33.33
+  update_distance = 40
+  resolution_scale = 16
+  render_debug = false
+  ```
+  
+  Maximum quality settings for high-end systems. May significantly impact performance.
+</Accordion>
+
+## Performance Tips
+
+<Note>
+  **Most Impactful Settings for Performance**:
+  
+  1. `update_fps` - Lower values significantly improve performance
+  2. `render_distance` - Reduce for better FPS with multiple TVs
+  3. `resolution_scale` - Lower values reduce memory usage
+  4. `screen_effects` - Disable for fastest rendering
+</Note>
+
+<Warning>
+  Settings marked with "Requires game restart" (`update_fps`, `min_update_fps`, `throttling_update_ms`) will not take effect until you restart Minecraft.
+</Warning>

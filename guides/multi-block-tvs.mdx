@@ -1,0 +1,180 @@
+---
+title: 'Multi-Block TVs'
+description: 'Learn how to create large TV walls by connecting multiple TV blocks together'
+icon: 'tv'
+---
+
+Vista allows you to connect multiple TV blocks together to create large, multi-block screens. This guide will walk you through the mechanics of creating impressive TV walls.
+
+## Understanding TV Connections
+
+TV blocks automatically detect and connect to adjacent TV blocks that are facing the same direction. The mod uses a sophisticated grid system to form rectangular screens.
+
+<Note>
+The maximum size of connected TVs is configurable in `vista-common.toml`. By default, TV walls can be up to 8×8 blocks, but this can be adjusted from 1 to 32 blocks per side.
+</Note>
+
+## Creating a Multi-Block TV
+
+<Steps>
+  <Step title="Place Your First TV Block">
+    Start by placing a TV block facing the direction you want your screen to face. This will be part of your multi-block structure.
+  </Step>
+
+  <Step title="Add Adjacent TV Blocks">
+    Place additional TV blocks next to your first block. They must:
+    - Face the **same direction** as the first block
+    - Be directly adjacent (horizontally or vertically)
+    - Form a rectangular shape
+
+    The TVs will automatically connect and form a larger screen.
+  </Step>
+
+  <Step title="Avoid Manual Connection Mode">
+    By default, TV blocks automatically expand their connections when placed. If you want to prevent automatic connection, **hold Shift** while placing the block.
+  </Step>
+
+  <Step title="Power Your TV Wall">
+    Apply redstone power to any TV block in the connected structure. The entire TV wall will turn on together.
+  </Step>
+</Steps>
+
+## Connection Types
+
+The mod uses 10 different connection states defined in `TVType.java:11-21`:
+
+<AccordionGroup>
+  <Accordion title="Single TV" icon="square">
+    A standalone TV block with no connections.
+  </Accordion>
+
+  <Accordion title="Corner Connections" icon="vector-square">
+    - **TOP_LEFT**: Connected to the right and below
+    - **TOP_RIGHT**: Connected to the left and below
+    - **BOTTOM_LEFT**: Connected to the right and above
+    - **BOTTOM_RIGHT**: Connected to the left and above
+  </Accordion>
+
+  <Accordion title="Edge Connections" icon="minus">
+    - **TOP**: Connected to left, right, and below
+    - **BOTTOM**: Connected to left, right, and above
+    - **LEFT**: Connected to top, bottom, and right
+    - **RIGHT**: Connected to top, bottom, and left
+  </Accordion>
+
+  <Accordion title="Center Connection" icon="grid">
+    - **CENTER**: Connected on all four sides (top, bottom, left, right)
+  </Accordion>
+</AccordionGroup>
+
+## How Connection Detection Works
+
+When you place a TV block, Vista's `RectFinder` algorithm (`RectFinder.java:76-116`) searches for the largest possible rectangular configuration:
+
+1. **Initial Detection**: The block checks all four adjacent positions for compatible TV blocks
+2. **Rectangle Expansion**: The algorithm attempts to expand in all directions to form the largest rectangle
+3. **Master Block Selection**: The bottom-left TV in the grid becomes the "master" that stores the cassette
+4. **Connection Update**: All TV blocks update their connection state to reflect their position in the grid
+
+<Tip>
+The master block (bottom-left corner) is the only one that can hold a cassette. When you interact with any TV in the wall, you're actually interacting with the master block.
+</Tip>
+
+## Grid System
+
+The connection system uses a grid-based approach defined in `TVBlock.java:271-354`:
+
+```java
+// From TVBlock.java:282-286
+public TVGridAccess(Level level, BlockPos pos, BlockState state) {
+    this.pos = pos;
+    this.facing = state.getValue(FACING);
+    this.level = level;
+}
+```
+
+Each TV stores its:
+- **Connection type**: Which edges connect to other TVs
+- **Power state**: Whether it's receiving redstone power
+- **Master reference**: Location of the bottom-left TV (which holds the cassette)
+
+## Breaking and Reshaping
+
+When you break a TV block from a multi-block structure:
+
+1. The algorithm finds the closest remaining TV to the center
+2. That TV becomes the new master block
+3. The remaining TVs reconnect to form the largest possible rectangle
+4. If the old master held a cassette, it transfers to the new master
+
+<Warning>
+If you break the master block (bottom-left corner), the cassette will automatically transfer to the new master block. No items are lost!
+</Warning>
+
+## Screen Rendering
+
+The screen size is calculated based on the number of connected blocks (`TVBlockEntity.java:250-256`):
+
+```java
+public int getScreenPixelWidth() {
+    return Math.max(1, connectedTvsAmount) * 16 - EDGE_PIXEL_LEN;
+}
+
+public int getScreenPixelHeight() {
+    return Math.max(1, connectedTvsAmount) * 16 - EDGE_PIXEL_LEN;
+}
+```
+
+Each TV block contributes 16 pixels (minus 4 pixels for the border), so a 3×3 TV wall creates a 44×44 pixel screen.
+
+## Tips for Large TV Walls
+
+<CardGroup cols={2}>
+  <Card title="Square Configurations" icon="square">
+    Square configurations (2×2, 3×3, 4×4) work best for most content. The algorithm prioritizes square shapes when possible.
+  </Card>
+
+  <Card title="Cinema Achievement" icon="trophy">
+    Place a cassette in a TV wall of 3 or more connected blocks while powered to earn the "Cinema" advancement!
+  </Card>
+
+  <Card title="Power Efficiency" icon="bolt">
+    You only need to power one TV block in the structure. The power state propagates to all connected TVs.
+  </Card>
+
+  <Card title="Same Direction Required" icon="compass">
+    All TVs must face the exact same direction. Even a single misaligned TV will break the connection.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="TVs Won't Connect" icon="unlink">
+    Check that:
+    - All TVs are facing the same direction
+    - The shape forms a perfect rectangle
+    - You haven't exceeded the max size configured in `vista-common.toml`
+    - You're not holding Shift while placing (which prevents auto-connection)
+  </Accordion>
+
+  <Accordion title="Can't Insert Cassette" icon="cassette-tape">
+    You must interact with the master block (bottom-left corner). Try clicking different TVs in the wall until you find it, or break and replace to reset the master.
+  </Accordion>
+
+  <Accordion title="Different Content on Different TVs" icon="clone">
+    This shouldn't happen if properly connected. If it does, try breaking and replacing the TVs to force a reconnection.
+  </Accordion>
+</AccordionGroup>
+
+## Configuration
+
+You can customize multi-block TV behavior in your config file:
+
+```toml
+[general]
+# Maximum size of connected TVs (in blocks). Set to 1 to disable multi-block TVs.
+max_connected_tv_size = 8
+```
+
+From `CommonConfigs.java:24-26`

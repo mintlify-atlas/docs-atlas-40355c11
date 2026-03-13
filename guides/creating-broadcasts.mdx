@@ -1,0 +1,261 @@
+---
+title: 'Creating Broadcasts'
+description: 'Learn how to set up viewfinders and link them to TVs for live camera feeds'
+icon: 'video'
+---
+
+Viewfinders allow you to create live camera feeds that can be broadcast to TVs throughout your world. This guide covers everything you need to know about setting up broadcast systems.
+
+## What is a Viewfinder?
+
+A Viewfinder is a camera block that captures a live video feed from its perspective. When linked to a TV via a Hollow Cassette, the TV displays exactly what the Viewfinder sees in real-time.
+
+<Note>
+Each Viewfinder has a unique UUID that identifies its broadcast feed. This allows multiple TVs to display the same camera feed simultaneously.
+</Note>
+
+## Placing a Viewfinder
+
+<Steps>
+  <Step title="Choose Your Camera Location">
+    Place the Viewfinder block on any surface - walls, ceilings, or floors. The block will attach to the surface you click on.
+  </Step>
+
+  <Step title="Automatic Orientation">
+    When placed, the Viewfinder automatically aims toward you. From `ViewFinderBlock.java:84-99`:
+    - If placed on horizontal surfaces (floor/ceiling), it points at your pitch angle
+    - If placed on walls, it points at your yaw (horizontal rotation)
+  </Step>
+
+  <Step title="Fine-Tune the Angle">
+    Right-click the Viewfinder to open the camera control interface and adjust the viewing angle.
+  </Step>
+</Steps>
+
+## Viewfinder Controls
+
+When you open a Viewfinder's interface, you can control several parameters:
+
+<CardGroup cols={2}>
+  <Card title="Yaw" icon="arrows-left-right">
+    Horizontal rotation of the camera. Adjustable via mouse or manual input.
+  </Card>
+
+  <Card title="Pitch" icon="arrows-up-down">
+    Vertical tilt of the camera. Ranges from looking up to looking down.
+  </Card>
+
+  <Card title="Zoom" icon="magnifying-glass-plus">
+    Zoom level from 1 to 44x magnification. Higher zoom provides more detail but narrower field of view.
+  </Card>
+
+  <Card title="Lock" icon="lock">
+    Locks the camera position to prevent accidental changes.
+  </Card>
+</CardGroup>
+
+### Zoom Mechanics
+
+The zoom system uses FOV (Field of View) modification (`ViewFinderBlockEntity.java:231-246`):
+
+```java
+public float getFOV() {
+    return BASE_FOV * getFOVModifier();
+}
+
+public float getFOVModifier() {
+    float spyglassZoom = 0.1f;
+    float maxZoom = spyglassZoom / 5;
+    float normalizedZoom = getNormalizedZoomFactor();
+    return Mth.lerp(normalizedZoom, 1, maxZoom);
+}
+```
+
+- **Zoom Level 1**: Normal 70° FOV
+- **Zoom Level 44**: Maximum zoom with narrowed FOV (similar to spyglass)
+
+## Creating a Broadcast Link
+
+To display a Viewfinder's feed on a TV, you need to create a link using a Hollow Cassette:
+
+<Steps>
+  <Step title="Craft a Hollow Cassette">
+    Create a Hollow Cassette item. This will store the link to your camera feed.
+  </Step>
+
+  <Step title="Link to Viewfinder">
+    Right-click the Viewfinder with the Hollow Cassette in hand. The cassette will glow with an enchantment effect, indicating it's linked.
+
+    From `HollowCassetteItem.java:29-40`:
+    ```java
+    public InteractionResult useOn(UseOnContext context) {
+        Level level = context.getLevel();
+        BlockEntity be = level.getBlockEntity(context.getClickedPos());
+        if (be instanceof IBroadcastSource feed) {
+            if (!level.isClientSide) {
+                ItemStack stack = context.getItemInHand();
+                stack.set(VistaMod.LINKED_FEED_COMPONENT.get(), feed.getUUID());
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide);
+        }
+        return super.useOn(context);
+    }
+    ```
+  </Step>
+
+  <Step title="Insert Into TV">
+    Insert the linked Hollow Cassette into any TV. The TV will now display the live feed from the Viewfinder.
+  </Step>
+
+  <Step title="Power the TV">
+    Apply redstone power to the TV to activate the broadcast feed.
+  </Step>
+</Steps>
+
+<Tip>
+Hovering over a linked Hollow Cassette will show you which Viewfinder it's connected to, including the block coordinates.
+</Tip>
+
+## Broadcast System Architecture
+
+The broadcast system uses a centralized manager (`BroadcastManager`) that tracks all camera feeds:
+
+### How It Works
+
+1. **Registration**: When a Viewfinder is placed, it registers itself with the `BroadcastManager` using its UUID
+2. **Storage**: The manager stores a mapping of UUID → Block Position for all active feeds
+3. **Retrieval**: When a TV needs to render a feed, it queries the manager using the UUID from the cassette
+4. **Rendering**: The TV renders from the Viewfinder's perspective in real-time
+
+<Note>
+The broadcast system is dimension-aware. A cassette linked to a Viewfinder in the Overworld won't work if the TV is in the Nether (it will show "Unknown Feed").
+</Note>
+
+## Advanced Camera Techniques
+
+### Rotating Viewfinders
+
+If you have the **Supplementaries** mod installed, you can use wrenches to rotate Viewfinders:
+
+- The rotation is applied to the camera's facing direction
+- Both the block and the internal pitch/yaw update automatically
+- Perfect for adjusting camera angles without reopening the interface
+
+From `ViewFinderBlock.java:191-205`.
+
+### Analog Rotation
+
+With compatible mods, you can use analog rotation (gradual, smooth rotation) on Viewfinders:
+
+```java
+public void rotateAnalog(BlockState state, Level level, BlockPos pos, 
+                         Direction face, boolean ccw, float speed) {
+    if (level.getBlockEntity(pos) instanceof ViewFinderBlockEntity tile) {
+        speed = speed * 0.01f;
+        float deltaAngle = -speed * (ccw ? -1 : 1);
+        // Applies smooth rotation to the camera
+    }
+}
+```
+
+This allows for motorized, automated camera movement.
+
+## Multiple TVs, One Feed
+
+You can display the same camera feed on multiple TVs:
+
+1. Link a Hollow Cassette to a Viewfinder
+2. Make copies of that cassette (the UUID is copied)
+3. Insert the cassettes into different TVs
+4. All TVs will show the same live feed
+
+<Warning>
+If you remove the Viewfinder block, all linked cassettes will show "Unknown Feed" and stop working. The UUIDs are tied to specific block positions.
+</Warning>
+
+## Camera Filters
+
+Viewfinders support filters if you have the **Supplementaries** mod:
+
+<CardGroup cols={2}>
+  <Card title="Glass Pane Filters" icon="filter">
+    Insert colored stained glass panes to tint the camera feed.
+  </Card>
+
+  <Card title="Shader Filters" icon="wand-magic-sparkles">
+    Certain items (like Quark's dirty glass pane) apply special shader effects. The dirty glass pane applies a retro NTSC codec shader.
+  </Card>
+</CardGroup>
+
+From `SuppCompat.java:20-25`:
+```java
+public static ResourceLocation getShaderForItem(Item item) {
+    if (item == VistaMod.TV_ITEM.get()) return null;
+    if (item == QUARK_GLASS_PANE.get()) return RETRO_SHADER;
+    String shaderForItem = MobHeadShadersManager.INSTANCE.getShaderForItem(item);
+    return shaderForItem == null ? null : ResourceLocation.parse(shaderForItem);
+}
+```
+
+## Comparator Output
+
+TVs displaying broadcast feeds provide a comparator signal strength of 15 (`HollowCassetteItem.java:71-73`):
+
+```java
+public int getAnalogSignalStrength(ItemStack stack) {
+    return 15;
+}
+```
+
+This allows you to detect when a TV is showing a live feed versus other content.
+
+## Special Interactions
+
+### Enderman Detection
+
+If a Viewfinder is pointing at an Enderman, and you're watching through a TV:
+- The Enderman will react as if you're looking at it directly
+- Visual static effects appear on the TV screen
+- The Enderman may become aggressive
+
+This is handled by `TVEndermanObservationController` and creates immersive gameplay mechanics.
+
+### Performance Considerations
+
+Viewfinders render a full 3D scene from their perspective:
+- Multiple active broadcasts increase render load
+- Higher zoom levels require more precision rendering
+- Consider limiting simultaneous active feeds on servers
+
+<Tip>
+Lock your Viewfinders when you've found the perfect angle. This prevents accidental changes and displays a locked icon in the interface.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="TV Shows 'Unknown Feed'" icon="circle-question">
+    This means the Viewfinder is:
+    - In a different dimension
+    - Unloaded (too far away)
+    - Removed/broken
+    
+    The cassette stores the UUID, but the Viewfinder must exist and be loaded for the feed to work.
+  </Accordion>
+
+  <Accordion title="Can't Open Viewfinder Interface" icon="hand">
+    Another player may be using it. Viewfinders implement `IOneUserInteractable` and only allow one user at a time to prevent conflicts.
+  </Accordion>
+
+  <Accordion title="Camera Angle Resets" icon="rotate-left">
+    Make sure to click the lock button after adjusting your camera. Unlocked cameras may reset to default positions.
+  </Accordion>
+
+  <Accordion title="Black Screen on TV" icon="tv">
+    Ensure:
+    - The TV is powered with redstone
+    - The Viewfinder's chunk is loaded
+    - You're in the same dimension
+    - The cassette is properly linked (should have enchantment glint)
+  </Accordion>
+</AccordionGroup>

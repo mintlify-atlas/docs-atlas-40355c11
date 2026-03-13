@@ -1,0 +1,571 @@
+---
+title: "Broadcasting System"
+description: "How live feeds link viewfinders to televisions"
+---
+
+# Broadcasting System
+
+Vista's broadcasting system allows viewfinders to transmit live video feeds to televisions through hollow cassettes. This system uses a global manager to track links between broadcast sources and their viewers.
+
+## Architecture Overview
+
+<CardGroup cols={2}>
+  <Card title="Broadcast Manager" icon="tower-cell">
+    World-saved data tracking all active broadcast links
+  </Card>
+  <Card title="Broadcast Sources" icon="video">
+    Viewfinders and other blocks that generate live feeds
+  </Card>
+  <Card title="Hollow Cassettes" icon="cassette-tape">
+    Items that store UUID links to broadcast sources
+  </Card>
+  <Card title="Television Receivers" icon="tv">
+    TVs that decode and display the broadcast feeds
+  </Card>
+</CardGroup>
+
+## Broadcast Manager
+
+The `BroadcastManager` is a world-saved data structure that maintains mappings between broadcast source UUIDs and their locations.
+
+### Data Structure
+
+From `BroadcastManager.java`:
+
+```java
+public final class BroadcastManager extends WorldSavedData {
+    private final Object lock = new Object();
+    private final HashBiMap<UUID, IBroadcastLocation> uuidToPos = HashBiMap.create();
+    private volatile Map<UUID, IBroadcastLocation> snapshot = Map.of();
+    
+    private void publishSnapshot() {
+        snapshot = Map.copyOf(uuidToPos);
+    }
+}
+```
+
+<Note>
+The manager uses a **bidirectional map** (`HashBiMap`) to allow efficient lookups in both directions:
+- UUID → Location: Find where a broadcast is coming from
+- Location → UUID: Check if a block is broadcasting
+
+The **snapshot** provides thread-safe read access without locks.
+</Note>
+
+### World Saved Data
+
+The broadcast manager persists across server restarts:
+
+```java
+public static final WorldSavedDataType<BroadcastManager> VIEWFINDER_CONNECTION =
+    RegHelper.registerWorldSavedData(
+        res("viewfinder_connection"), 
+        BroadcastManager::create,
+        () -> BroadcastManager.CODEC, 
+        () -> BroadcastManager.STREAM_CODEC, 
+        false);
+
+public static BroadcastManager getInstance(Level level) {
+    return VistaMod.VIEWFINDER_CONNECTION.getData(level);
+}
+```
+
+### Codec and Serialization
+
+```java
+public static final Codec<BroadcastManager> CODEC =
+    Codec.unboundedMap(UUIDUtil.STRING_CODEC, IBroadcastLocation.CODEC)
+        .xmap(
+            map -> {
+                BroadcastManager storage = new BroadcastManager();
+                map.forEach((uuid, pos) -> storage.addFeedInternal(uuid, pos, false));
+                storage.publishSnapshot();
+                return storage;
+            },
+            storage -> storage.snapshot
+        );
+```
+
+This codec:
+- Serializes the UUID-to-location map to NBT
+- Deserializes and rebuilds the manager on load
+- Automatically publishes a snapshot after deserialization
+
+## Linking System
+
+### Creating Links
+
+When a hollow cassette is linked to a viewfinder:
+
+```java
+public void linkFeed(UUID feedUUID, IBroadcastLocation projectorPos) {
+    boolean changed = false;
+    
+    synchronized (lock) {
+        IBroadcastLocation old = uuidToPos.get(feedUUID);
+        if (!projectorPos.equals(old)) {
+            uuidToPos.forcePut(feedUUID, projectorPos);
+            publishSnapshot();
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        setDirty();
+        sync();
+    }
+}
+```
+
+<Steps>
+  <Step title="Acquire Lock">
+    Thread-safe operation using synchronized block
+  </Step>
+  
+  <Step title="Update Mapping">
+    Use `forcePut` to overwrite any existing link for this UUID
+  </Step>
+  
+  <Step title="Publish Snapshot">
+    Create a new immutable snapshot for readers
+  </Step>
+  
+  <Step title="Mark Dirty">
+    Save to disk and sync to clients if changed
+  </Step>
+</Steps>
+
+### Removing Links
+
+Links are removed when viewfinders are destroyed:
+
+```java
+public void unlinkFeed(IBroadcastLocation projectorPos) {
+    boolean changed = false;
+    
+    synchronized (lock) {
+        UUID old = uuidToPos.inverse().remove(projectorPos);
+        if (old != null) {
+            publishSnapshot();
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        setDirty();
+        sync();
+    }
+}
+```
+
+Or by UUID:
+
+```java
+public void unlinkFeed(UUID feedUUID) {
+    boolean changed = false;
+    
+    synchronized (lock) {
+        if (uuidToPos.remove(feedUUID) != null) {
+            publishSnapshot();
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        setDirty();
+        sync();
+    }
+}
+```
+
+## Broadcast Locations
+
+The `IBroadcastLocation` interface represents where a broadcast originates:
+
+```java
+public interface IBroadcastLocation {
+    // Get the actual broadcast source at this location
+    Result<IBroadcastSource> get(boolean clientSide);
+    
+    // Get tooltip for display in cassette hover text
+    Component getTooltipComponent(Level level);
+    
+    // Codec for serialization
+    Codec<IBroadcastLocation> CODEC = ...;
+    StreamCodec<...> STREAM_CODEC = ...;
+}
+```
+
+### Level Block Entity Location
+
+The default implementation uses dimension + block position:
+
+```java
+public static final Supplier<BroadcastLocationType> LEVEL_BE_BROADCAST =
+    RegHelper.register(res("level_be_location"),
+        () -> LevelBELocation.TYPE, 
+        BROADCAST_LOCATION_REGISTRY.key());
+```
+
+<Accordion title="LevelBELocation Implementation">
+This location type stores:
+- **Dimension**: Which world (Overworld, Nether, End, etc.)
+- **Block Position**: XYZ coordinates of the viewfinder
+
+When requested, it:
+1. Loads the correct dimension
+2. Gets the block entity at the position
+3. Checks if it implements `IBroadcastSource`
+4. Returns the source or an error if invalid
+</Accordion>
+
+## Broadcast Sources
+
+Blocks that generate live feeds implement `IBroadcastSource`:
+
+```java
+public interface IBroadcastSource {
+    UUID getUUID();
+    
+    @Nullable IVideoSource getBroadcastVideo();
+    
+    default void ensureLinked(Level level, IBroadcastLocation location) {
+        if (level instanceof ServerLevel sl) {
+            BroadcastManager.getInstance(sl)
+                .linkFeed(this.getUUID(), location);
+        }
+    }
+    
+    default void removeLink(Level level) {
+        if (level instanceof ServerLevel sl) {
+            BroadcastManager.getInstance(sl)
+                .unlinkFeed(this.getUUID());
+        }
+    }
+}
+```
+
+### Viewfinder Implementation
+
+Viewfinders are the primary broadcast source:
+
+```java
+public class ViewFinderBlockEntity extends ItemDisplayTile 
+    implements IOneUserInteractable, IBroadcastSource {
+    
+    private UUID myUUID;
+    private final LiveFeedVideoSource videoSource;
+    
+    public ViewFinderBlockEntity(BlockPos pos, BlockState state) {
+        super(VistaMod.VIEWFINDER_TILE.get(), pos, state);
+        this.myUUID = UUID.randomUUID();
+        this.videoSource = new LiveFeedVideoSource(this);
+    }
+    
+    @Override
+    public UUID getUUID() {
+        return myUUID;
+    }
+    
+    @Override
+    public @Nullable IVideoSource getBroadcastVideo() {
+        return this.videoSource;
+    }
+}
+```
+
+## Hollow Cassette Integration
+
+Hollow cassettes store the UUID of their linked broadcast source:
+
+### Linking Process
+
+```java
+@Override
+public InteractionResult useOn(UseOnContext context) {
+    Level level = context.getLevel();
+    BlockEntity be = level.getBlockEntity(context.getClickedPos());
+    
+    if (be instanceof IBroadcastSource feed) {
+        if (!level.isClientSide) {
+            ItemStack stack = context.getItemInHand();
+            stack.set(VistaMod.LINKED_FEED_COMPONENT.get(), feed.getUUID());
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+    return super.useOn(context);
+}
+```
+
+<Steps>
+  <Step title="Right-Click Viewfinder">
+    Use hollow cassette on a viewfinder block
+  </Step>
+  
+  <Step title="Store UUID">
+    The cassette saves the viewfinder's unique ID
+  </Step>
+  
+  <Step title="Visual Feedback">
+    Cassette gains enchantment glint effect
+  </Step>
+  
+  <Step title="Tooltip Update">
+    Hover text shows linked location
+  </Step>
+</Steps>
+
+### Data Component
+
+```java
+public static final Supplier<DataComponentType<UUID>> LINKED_FEED_COMPONENT = 
+    RegHelper.registerDataComponent(res("linked_feed"), () ->
+        DataComponentType.<UUID>builder()
+            .persistent(UUIDUtil.CODEC)
+            .networkSynchronized(UUIDUtil.STREAM_CODEC)
+            .build());
+```
+
+## Retrieving Broadcasts
+
+### From UUID
+
+TVs use the broadcast manager to resolve UUID links:
+
+```java
+@Nullable
+public IBroadcastSource getBroadcast(@NotNull UUID feedId, boolean clientSide) {
+    IBroadcastLocation pos = snapshot.get(feedId);
+    if (pos == null) return null;
+    
+    var result = pos.get(clientSide);
+    if (result.isValid()) {
+        return result.getValue();
+    } else {
+        if (!clientSide) {
+            unlinkFeed(feedId);
+        }
+        return null;
+    }
+}
+```
+
+<Warning>
+**Automatic Cleanup**: If a broadcast source becomes invalid (e.g., viewfinder was removed), the manager automatically unlinks it on the server side.
+</Warning>
+
+### Fast Read Access
+
+All read operations use the immutable snapshot:
+
+```java
+@Nullable
+public IBroadcastLocation getFeedLocationById(UUID viewFinderUUID) {
+    return snapshot.get(viewFinderUUID);
+}
+
+@Nullable
+public UUID getIdOfFeedAt(IBroadcastLocation from) {
+    for (var e : snapshot.entrySet()) {
+        if (e.getValue().equals(from)) {
+            return e.getKey();
+        }
+    }
+    return null;
+}
+
+public Iterable<Map.Entry<UUID, IBroadcastLocation>> getAll() {
+    return snapshot.entrySet();
+}
+```
+
+<Note>
+Reads are lock-free and extremely fast, making broadcast lookups suitable for real-time rendering.
+</Note>
+
+## TV Integration
+
+When a hollow cassette is inserted into a TV:
+
+```java
+private void updateObservationController() {
+    ItemStack displayedItem = this.getDisplayedItem();
+    var uuid = displayedItem.get(VistaMod.LINKED_FEED_COMPONENT.get());
+    this.observationController = uuid == null ? null : 
+        new TVEndermanObservationController(uuid, this);
+}
+```
+
+The TV's video source system resolves the broadcast:
+
+```java
+@Override
+public void updateClientVisualsOnLoad() {
+    super.updateClientVisualsOnLoad();
+    this.videoSource = IVideoSource.create(this.getDisplayedItem());
+    this.videoPlaybackTicks = 0;
+}
+```
+
+### Video Source Types
+
+From the video source factory:
+
+```java
+public interface IVideoSource {
+    static IVideoSource create(ItemStack cassette) {
+        // Check for hollow cassette link
+        UUID linkedFeed = cassette.get(VistaMod.LINKED_FEED_COMPONENT.get());
+        if (linkedFeed != null) {
+            return new BroadcastVideoSource(linkedFeed);
+        }
+        
+        // Check for regular cassette tape
+        Holder<CassetteTape> tape = cassette.get(VistaMod.CASSETTE_TAPE_COMPONENT.get());
+        if (tape != null) {
+            return new CassetteTapeVideoSource(tape);
+        }
+        
+        return EMPTY;
+    }
+}
+```
+
+## Network Synchronization
+
+The broadcast manager syncs to clients:
+
+```java
+public static final StreamCodec<RegistryFriendlyByteBuf, BroadcastManager> STREAM_CODEC =
+    ByteBufCodecs.map(
+        i -> new HashMap<>(),
+        UUIDUtil.STREAM_CODEC,
+        IBroadcastLocation.STREAM_CODEC
+    ).map(
+        map -> {
+            BroadcastManager storage = new BroadcastManager();
+            map.forEach((uuid, pos) -> storage.addFeedInternal(uuid, pos, true));
+            storage.publishSnapshot();
+            return storage;
+        },
+        storage -> new HashMap<>(storage.snapshot)
+    );
+```
+
+<Steps>
+  <Step title="Server Changes">
+    When links are added/removed, `setDirty()` marks data as changed
+  </Step>
+  
+  <Step title="Packet Creation">
+    Stream codec serializes the manager state
+  </Step>
+  
+  <Step title="Client Receive">
+    Clients rebuild their local copy of the manager
+  </Step>
+  
+  <Step title="Render Update">
+    TVs can now resolve broadcasts client-side for rendering
+  </Step>
+</Steps>
+
+## Advanced Use Cases
+
+### Multiple Viewers
+
+<Accordion title="One Broadcast, Many TVs">
+Since the link is stored in the hollow cassette item, you can:
+1. Link a hollow cassette to a viewfinder
+2. Make copies (creative mode or custom recipes)
+3. Each cassette references the same broadcast UUID
+4. Insert into different TVs to watch from multiple locations
+
+This is perfect for distributed security camera systems!
+</Accordion>
+
+### Cross-Dimensional Broadcasting
+
+<Accordion title="Nether to Overworld">
+Broadcast locations store dimension information:
+- Place viewfinder in the Nether
+- Link hollow cassette
+- Take cassette to Overworld
+- Insert into TV
+- Watch live feed from across dimensions!
+
+<Warning>
+Performance may vary if the source chunk is not loaded. The system handles unloaded chunks gracefully by returning invalid results.
+</Warning>
+</Accordion>
+
+### Dynamic Linking
+
+<Accordion title="Programmable Links via ComputerCraft">
+While hollow cassettes store static links, you can create dynamic camera systems:
+1. Multiple viewfinders at different locations
+2. Multiple linked cassettes in a storage system
+3. ComputerCraft program ejects/inserts cassettes
+4. Switch between camera views programmatically
+</Accordion>
+
+## Debugging
+
+### Check Active Broadcasts
+
+```java
+public Iterable<Map.Entry<UUID, IBroadcastLocation>> getAll() {
+    return snapshot.entrySet();
+}
+```
+
+You can iterate all active broadcasts to debug links:
+- How many broadcasts are registered?
+- Where are they located?
+- Are there orphaned UUIDs?
+
+### Validate Links
+
+The manager automatically validates broadcasts on access:
+
+```java
+var result = pos.get(clientSide);
+if (result.isValid()) {
+    return result.getValue();
+} else {
+    if (!clientSide) {
+        unlinkFeed(feedId);  // Auto-cleanup
+    }
+    return null;
+}
+```
+
+## Tips and Tricks
+
+<AccordionGroup>
+  <Accordion title="Organizing Camera Networks">
+    - Use item frames to display and label cassettes
+    - Color-code with dyes or descriptions
+    - Store in shulker boxes for portable monitoring
+    - Create backup cassettes in case of loss
+  </Accordion>
+  
+  <Accordion title="Performance Optimization">
+    - Limit active broadcast renders based on distance
+    - Use lower render distances for background monitors
+    - Consider chunk loading for critical viewfinders
+    - Enderman detection throttling reduces server load
+  </Accordion>
+  
+  <Accordion title="Creative Applications">
+    - Cinema: Multiple angles of a stage or arena
+    - Security: Monitor vault, farms, or entry points
+    - Exploration: Place viewfinders at scenic locations
+    - PvP: Track player movement in combat zones
+    - Storytelling: Record key moments for machinima
+  </Accordion>
+</AccordionGroup>
+
+<Card title="Complete the Tour" icon="check" href="/features/televisions">
+  Return to televisions or explore the full feature set
+</Card>

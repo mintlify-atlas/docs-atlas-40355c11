@@ -1,0 +1,100 @@
+---
+title: 'Common Configuration'
+description: 'Server-synced configuration options for Vista'
+icon: 'server'
+---
+
+The common configuration file contains server-synced settings that affect gameplay mechanics. These settings are synchronized from the server to all connected clients.
+
+## Configuration File Location
+
+The common configuration file is located at:
+- **Forge**: `config/vista-common.toml`
+- **Fabric**: `config/vista-common.json5`
+
+## General Settings
+
+### TV Connection Settings
+
+<ParamField path="max_connected_tv_size" type="integer" default={8}>
+  Maximum size of connected TVs in blocks. Multiple TV blocks can be connected together to create larger displays.
+  
+  **Range**: 1-32
+  
+  <Note>
+    Set this value to `1` to completely disable multi-block TV functionality.
+  </Note>
+  
+  **Examples**:
+  - `1` - Only single-block TVs allowed
+  - `8` (default) - TVs can be up to 8 blocks in size
+  - `32` - Maximum allowed TV size
+</ParamField>
+
+### Loot and Drops
+
+<ParamField path="creeper_drop" type="boolean" default={true}>
+  Controls whether creepers drop cassette tapes when killed by pillagers.
+  
+  **Options**:
+  - `true` (default) - Creepers drop tapes when killed by pillagers
+  - `false` - Creepers do not drop tapes
+  
+  <Note>
+    This provides an alternative method for obtaining cassette tapes beyond crafting and chest loot.
+  </Note>
+</ParamField>
+
+<ParamField path="chest_drop" type="boolean" default={true}>
+  Controls whether loot chests can contain cassette tapes.
+  
+  **Options**:
+  - `true` (default) - Cassette tapes can be found in loot chests
+  - `false` - Cassette tapes will not generate in loot chests
+  
+  <Warning>
+    Disabling both `creeper_drop` and `chest_drop` will make cassette tapes only obtainable through crafting.
+  </Warning>
+</ParamField>
+
+## Configuration Examples
+
+<Accordion title="Default Configuration">
+  ```toml
+  [general]
+  max_connected_tv_size = 8
+  creeper_drop = true
+  chest_drop = true
+  ```
+</Accordion>
+
+<Accordion title="Single Block TVs Only">
+  ```toml
+  [general]
+  max_connected_tv_size = 1
+  creeper_drop = true
+  chest_drop = true
+  ```
+</Accordion>
+
+<Accordion title="Crafting Only Mode">
+  ```toml
+  [general]
+  max_connected_tv_size = 8
+  creeper_drop = false
+  chest_drop = false
+  ```
+  
+  This configuration makes cassette tapes only obtainable through crafting recipes.
+</Accordion>
+
+<Accordion title="Large TV Displays">
+  ```toml
+  [general]
+  max_connected_tv_size = 32
+  creeper_drop = true
+  chest_drop = true
+  ```
+  
+  Allows for maximum-sized TV displays up to 32 blocks.
+</Accordion>

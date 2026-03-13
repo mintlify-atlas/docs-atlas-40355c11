@@ -1,0 +1,486 @@
+---
+title: 'Mod Support & Integrations'
+description: 'Built-in integrations with popular Minecraft mods'
+icon: 'puzzle-piece'
+---
+
+## Overview
+
+Vista provides deep integrations with popular Minecraft mods, extending functionality and ensuring compatibility. All integrations are automatically enabled when the corresponding mod is detected.
+
+## Exposure Integration
+
+Vista integrates with the [Exposure](https://modrinth.com/mod/exposure) mod to support photograph and film items in picture frames.
+
+### Picture Tape Item
+
+Vista adds a special Picture Tape item that works with Exposure's photograph system:
+
+```java ExposureCompat.java:33-37
+public static final Supplier<Item> PICTURE_TAPE = RegHelper.registerItem(
+    VistaMod.res("picture_tape"),
+    () -> new PictureTapeItem(new Item.Properties()
+        .component(PICTURE_TAPE_CONTENT.get(), new PictureTapeContent(List.of())))
+);
+```
+
+### Picture Tape Content Component
+
+The Picture Tape uses a custom data component to store photograph data:
+
+```java ExposureCompat.java:26-31
+public static final Supplier<DataComponentType<PictureTapeContent>> PICTURE_TAPE_CONTENT =
+    RegHelper.registerDataComponent(VistaMod.res("item_list"),
+        () -> DataComponentType.<PictureTapeContent>builder()
+            .persistent(PictureTapeContent.CODEC)
+            .networkSynchronized(PictureTapeContent.STREAM_CODEC)
+            .build());
+```
+
+### Picture Tape Menu
+
+A dedicated menu allows players to view and manage picture tapes:
+
+```java ExposureCompat.java:39-40
+public static final Supplier<MenuType<PictureTapeMenu>> PICTURE_TAPE_MENU =
+    RegHelper.registerMenuType(VistaMod.res("picture_tape"), PictureTapeMenu::fromBuffer);
+```
+
+### Creative Tab Registration
+
+```java CompatHandler.java:30-32
+public static void addItemsToTabs(RegHelper.ItemToTabEvent event) {
+    if (EXPOSURE) event.add(CreativeModeTabs.TOOLS_AND_UTILITIES, ExposureCompat.PICTURE_TAPE.get());
+}
+```
+
+<Note>
+Picture Tape items are added to the Tools & Utilities creative tab when Exposure is loaded.
+</Note>
+
+### Video Source Integration
+
+Vista provides a custom video source for Exposure's picture frames:
+
+```java
+PictureFrameVideoSource
+```
+
+This allows Vista's camera feeds to be displayed directly in Exposure picture frames.
+
+## ComputerCraft Integration
+
+Vista provides full ComputerCraft peripheral support for programmable camera control.
+
+### ViewFinder Peripheral
+
+The ViewFinder peripheral allows ComputerCraft computers to control camera orientation and zoom.
+
+#### Peripheral Type
+
+```java ViewFinderPeripheral.java:56-58
+@Override
+public String getType() {
+    return "view_finder";
+}
+```
+
+#### Available Functions
+
+<CardGroup cols={2}>
+<Card title="setYaw(value)" icon="compass">
+```lua
+peripheral.call("view_finder", "setYaw", 90.0)
+```
+Sets the horizontal rotation (0-360 degrees)
+</Card>
+
+<Card title="getYaw()" icon="compass">
+```lua
+local yaw = peripheral.call("view_finder", "getYaw")
+```
+Returns the current horizontal rotation
+</Card>
+
+<Card title="setPitch(value)" icon="angles-up-down">
+```lua
+peripheral.call("view_finder", "setPitch", -45.0)
+```
+Sets the vertical rotation (-90 to 90 degrees)
+</Card>
+
+<Card title="getPitch()" icon="angles-up-down">
+```lua
+local pitch = peripheral.call("view_finder", "getPitch")
+```
+Returns the current vertical rotation
+</Card>
+
+<Card title="setZoom(level)" icon="magnifying-glass-plus">
+```lua
+peripheral.call("view_finder", "setZoom", 3)
+```
+Sets zoom level (1 to MAX_ZOOM)
+</Card>
+
+<Card title="getZoom()" icon="magnifying-glass">
+```lua
+local zoom = peripheral.call("view_finder", "getZoom")
+```
+Returns the current zoom level
+</Card>
+</CardGroup>
+
+#### Implementation Details
+
+```java ViewFinderPeripheral.java:21-25
+@LuaFunction
+public void setYaw(double value) {
+    tile.setYaw(acc, (float) value);
+    acc.updateClients();
+}
+```
+
+```java ViewFinderPeripheral.java:33-36
+@LuaFunction
+public void setPitch(double value) {
+    tile.setPitch(acc, (float) value);
+    acc.updateClients();
+}
+```
+
+```java ViewFinderPeripheral.java:43-48
+@LuaFunction
+public void setZoom(int zoom) {
+    byte power = (byte) Math.min(Math.max(zoom, 1), ViewFinderBlockEntity.MAX_ZOOM);
+    tile.setZoomLevel(power);
+    acc.updateClients();
+}
+```
+
+<Note>
+All setter functions automatically synchronize changes to clients via `acc.updateClients()`.
+</Note>
+
+### Signal Projector Peripheral
+
+The Signal Projector peripheral enables ComputerCraft control of video URL playback.
+
+#### Peripheral Type
+
+```java SignalProjectorPeripheral.java:18-20
+@Override
+public String getType() {
+    return "cassette_burner";
+}
+```
+
+#### Available Functions
+
+<CardGroup cols={2}>
+<Card title="getUrl()" icon="link">
+```lua
+local url = peripheral.call("cassette_burner", "getUrl")
+```
+Returns the current video URL
+</Card>
+
+<Card title="setUrl(url)" icon="link-slash">
+```lua
+peripheral.call("cassette_burner", "setUrl", "https://example.com/video.mp4")
+```
+Sets the video URL to stream
+</Card>
+</CardGroup>
+
+#### Implementation
+
+```java SignalProjectorPeripheral.java:22-30
+@LuaFunction
+public String getUrl() {
+    return tile.getUrl();
+}
+
+@LuaFunction
+public void setUrl(String url) {
+    tile.setUrl(url);
+}
+```
+
+### Example: Automated Camera Patrol
+
+```lua
+-- Wrap the view_finder peripheral
+local camera = peripheral.wrap("view_finder")
+
+-- Patrol pattern
+local waypoints = {
+    {yaw = 0,   pitch = 0,  zoom = 1},
+    {yaw = 90,  pitch = 0,  zoom = 2},
+    {yaw = 180, pitch = -30, zoom = 3},
+    {yaw = 270, pitch = 0,  zoom = 1},
+}
+
+-- Patrol loop
+while true do
+    for _, point in ipairs(waypoints) do
+        camera.setYaw(point.yaw)
+        camera.setPitch(point.pitch)
+        camera.setZoom(point.zoom)
+        sleep(5)
+    end
+end
+```
+
+## Supplementaries Integration
+
+Vista integrates with [Supplementaries](https://modrinth.com/mod/supplementaries) to add special shader effects and compatibility features.
+
+### Custom Shader Support
+
+Supplementaries' mob head shader system is integrated with Vista:
+
+```java SuppCompat.java:20-25
+public static ResourceLocation getShaderForItem(Item item) {
+    if (item == VistaMod.TV_ITEM.get()) return null;
+    if (item == QUARK_GLASS_PANE.get()) return RETRO_SHADER;
+    String shaderForItem = MobHeadShadersManager.INSTANCE.getShaderForItem(item);
+    return shaderForItem == null ? null : ResourceLocation.parse(shaderForItem);
+}
+```
+
+### Quark Glass Pane Integration
+
+When Quark's dirty glass pane is used, Vista applies a retro NTSC shader effect:
+
+```java SuppCompat.java:15-18
+private static final Supplier<Item> QUARK_GLASS_PANE =
+    Suppliers.memoize(() -> (BuiltInRegistries.ITEM.getOptional(
+        ResourceLocation.fromNamespaceAndPath("quark","dirty_glass_pane")))
+        .orElse(null));
+```
+
+```java SuppCompat.java:18
+private static final ResourceLocation RETRO_SHADER = VistaMod.res("shaders/post/ntsc_codec.json");
+```
+
+<Note>
+Using Quark's dirty glass pane with Vista picture frames automatically applies a retro CRT-style filter.
+</Note>
+
+### April Fools Features
+
+```java SuppCompat.java:27-29
+public static boolean isFunny() {
+    return MiscUtils.FESTIVITY.isAprilsFool();
+}
+```
+
+Vista respects Supplementaries' festivity system for special date-based features.
+
+## JEI Integration
+
+Vista provides Just Enough Items (JEI) integration for proper item differentiation.
+
+### Plugin Registration
+
+```java JEICompat.java:12-20
+@JeiPlugin
+public class JEICompat implements IModPlugin {
+    private static final ResourceLocation ID = VistaMod.res("jei_plugin");
+
+    @Override
+    public ResourceLocation getPluginUid() {
+        return ID;
+    }
+}
+```
+
+### Cassette Tape Subtypes
+
+Vista registers a custom subtype interpreter for cassette tapes to differentiate them by content:
+
+```java JEICompat.java:22-25
+@Override
+public void registerItemSubtypes(ISubtypeRegistration registration) {
+    registration.registerSubtypeInterpreter(VistaMod.CASSETTE.get(), CassetteSubtypeInterpreter.INSTANCE);
+}
+```
+
+#### Subtype Interpreter Implementation
+
+```java JEICompat.java:27-40
+public enum CassetteSubtypeInterpreter implements ISubtypeInterpreter<ItemStack> {
+    INSTANCE;
+
+    @Override
+    public Object getSubtypeData(ItemStack stack, UidContext uidContext) {
+        return stack.get(VistaMod.CASSETTE_TAPE_COMPONENT.get());
+    }
+
+    @Override
+    public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext uidContext) {
+        Object component = stack.get(VistaMod.CASSETTE_TAPE_COMPONENT.get());
+        return component == null ? "" : component.toString();
+    }
+}
+```
+
+<Note>
+This ensures cassette tapes with different recordings are treated as distinct items in JEI's recipe and item lists.
+</Note>
+
+## Sodium / Embeddium Support
+
+Vista automatically detects and adapts to Sodium/Embeddium rendering optimizations.
+
+```java CompatHandler.java:19
+public static final boolean SODIUM = PlatHelper.isModLoaded("sodium") || PlatHelper.isModLoaded("embeddium");
+```
+
+### Render Compatibility
+
+Vista references Sodium's mixin interfaces for proper renderer integration:
+
+```java SodiumCompat.java:3-4
+import net.caffeinemc.mods.sodium.mixin.core.render.world.LevelRendererMixin;
+import net.caffeinemc.mods.sodium.mixin.core.world.map.ClientLevelMixin;
+```
+
+<Card title="Performance Note" icon="bolt">
+Sodium/Embeddium optimizations are fully compatible with Vista's camera rendering system, providing improved performance for both camera views and normal rendering.
+</Card>
+
+## Platform-Specific Implementations
+
+Vista uses the `@ExpectPlatform` pattern for platform-specific integration code:
+
+```java CCCompat.java:16-26
+@Contract
+@ExpectPlatform
+public static void init() {
+    throw new AssertionError();
+}
+
+@Contract
+@ExpectPlatform
+public static void setup() {
+    throw new AssertionError();
+}
+```
+
+This pattern allows Vista to provide different implementations for Fabric, Forge, and NeoForge while maintaining a common API.
+
+### Platform Implementations
+
+<CardGroup cols={3}>
+<Card title="Fabric" icon="f">
+`fabric/src/.../CCCompatImpl.java`
+Fabric-specific ComputerCraft integration
+</Card>
+
+<Card title="Forge" icon="hammer">
+Platform-specific implementation for Forge mod loader
+</Card>
+
+<Card title="NeoForge" icon="n">
+`neoforge/src/.../CCCompatImpl.java`
+NeoForge-specific ComputerCraft integration
+</Card>
+</CardGroup>
+
+## Creating Custom Integrations
+
+To add your own mod integration to Vista:
+
+### Step 1: Add Detection Flag
+
+Add your mod detection to `CompatHandler.java`:
+
+```java
+public static final boolean YOUR_MOD = PlatHelper.isModLoaded("your_mod_id");
+```
+
+### Step 2: Create Compatibility Class
+
+Create a new class in `integration/your_mod/`:
+
+```java
+package net.mehvahdjukaar.vista.integration.your_mod;
+
+public class YourModCompat {
+    public static void init() {
+        // Initialization code
+    }
+}
+```
+
+### Step 3: Register in CompatHandler
+
+Add initialization to `CompatHandler.init()`:
+
+```java
+if (YOUR_MOD) YourModCompat.init();
+```
+
+### Step 4: Add Configuration (Optional)
+
+If you need config options, implement:
+
+```java
+public static void addConfigs(ConfigBuilder builder) {
+    // Add configuration options
+}
+```
+
+And register in `CompatHandler.addConfigs()`:
+
+```java
+if (YOUR_MOD) YourModCompat.addConfigs(builder);
+```
+
+<Warning>
+Always check the mod detection flag before accessing mod-specific classes to prevent ClassNotFoundException errors.
+</Warning>
+
+## Supported Mods Summary
+
+<CardGroup cols={2}>
+<Card title="Exposure" icon="camera-retro">
+Picture Tape items and video frame integration
+</Card>
+
+<Card title="ComputerCraft" icon="computer">
+Peripheral APIs for programmable camera control
+</Card>
+
+<Card title="Supplementaries" icon="wand-sparkles">
+Custom shaders and festivity features
+</Card>
+
+<Card title="JEI" icon="book">
+Item subtype differentiation for cassettes
+</Card>
+
+<Card title="Iris/Oculus" icon="eye">
+Shader compatibility and conflict resolution
+</Card>
+
+<Card title="Distant Horizons" icon="mountain">
+LOD rendering control for camera views
+</Card>
+
+<Card title="Sodium/Embeddium" icon="atom">
+Rendering optimization compatibility
+</Card>
+
+<Card title="Quark" icon="cube">
+Special shader effects for glass panes
+</Card>
+</CardGroup>
+
+## See Also
+
+<Card title="Compatibility Layer" icon="shield-check" href="/api/compatibility">
+Learn about Vista's compatibility system and conflict resolution
+</Card>
