@@ -1,0 +1,104 @@
+{
+  "projectType": "general",
+  "projectName": "Vista",
+  "projectDescription": "A Minecraft mod that adds advanced camera and television blocks for viewing and broadcasting in-game content.",
+  "theme": "palm",
+  "primaryColor": "#8B4789",
+  "lightColor": "#B888B5",
+  "darkColor": "#5A2F58",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/televisions",
+              "features/cassettes",
+              "features/viewfinders",
+              "features/broadcasting"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/multi-block-tvs",
+              "guides/creating-broadcasts",
+              "guides/cassette-tapes",
+              "guides/mod-integrations"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/common-config",
+              "configuration/client-config"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Components",
+            "pages": [
+              "api/blocks",
+              "api/items",
+              "api/block-entities"
+            ]
+          },
+          {
+            "group": "Systems",
+            "pages": [
+              "api/broadcast-system",
+              "api/cassette-registry",
+              "api/rendering"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "api/compatibility",
+              "api/mod-support"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-block television system with dynamic sizing up to 8x8 blocks",
+    "Cassette tape playback system with animated video content",
+    "Live camera viewfinder blocks for broadcasting",
+    "Hollow cassettes for linking viewfinders to televisions",
+    "Special mob interactions including Enderman freeze behavior",
+    "Multi-loader support for both Fabric and NeoForge"
+  ],
+  "publicApiSurface": [
+    "VistaMod - Main mod initialization class",
+    "TVBlock - Television block implementation",
+    "TVBlockEntity - Television block entity",
+    "ViewFinderBlock - Viewfinder block implementation",
+    "ViewFinderBlockEntity - Viewfinder block entity",
+    "CassetteItem - Cassette item with tape data",
+    "HollowCassetteItem - Hollow cassette for broadcasting",
+    "CassetteTape - Cassette tape data record",
+    "BroadcastManager - World saved data for viewfinder connections",
+    "BroadcastLocationType - Registry for broadcast location types",
+    "IBroadcastSource - Interface for broadcast sources",
+    "ITvCassette - Interface for TV cassette items",
+    "TVType - Enum for TV connection types",
+    "PowerState - Enum for TV power states",
+    "CASSETTE_TAPE_REGISTRY_KEY - Data pack registry for cassette tapes",
+    "BROADCAST_LOCATION_REGISTRY - Registry for broadcast location types"
+  ]
+}
